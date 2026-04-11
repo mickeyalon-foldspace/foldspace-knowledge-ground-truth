@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import { config } from "./config.js";
+import agentsRouter from "./routes/agents.js";
 import goldenSetsRouter from "./routes/goldenSets.js";
 import runsRouter from "./routes/runs.js";
 import resultsRouter from "./routes/results.js";
@@ -12,6 +13,7 @@ app.use(cors({ origin: "http://localhost:3000", credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 
 // API routes
+app.use("/api/agents", agentsRouter);
 app.use("/api/golden-sets", goldenSetsRouter);
 app.use("/api/runs", runsRouter);
 app.use("/api/results", resultsRouter);

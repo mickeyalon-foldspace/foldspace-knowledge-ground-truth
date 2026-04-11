@@ -34,13 +34,6 @@ for port in 3000 3001; do
   fi
 done
 
-# ── Stop MongoDB (Docker) ─────────────────────────────────────────
-if command -v docker &>/dev/null && [ -f "$DIR/docker-compose.yml" ]; then
-  echo "Stopping MongoDB container..."
-  docker compose -f "$DIR/docker-compose.yml" down 2>/dev/null || \
-    docker-compose -f "$DIR/docker-compose.yml" down 2>/dev/null || true
-fi
-
 if [ "$stopped" -gt 0 ]; then
   echo "✓ All services stopped."
 else

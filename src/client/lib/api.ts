@@ -66,6 +66,37 @@ export async function deleteGoldenSet(id: string) {
   return request<{ message: string }>(`/golden-sets/${id}`, { method: "DELETE" });
 }
 
+// Agents
+export async function getAgents() {
+  return request<AgentData[]>("/agents");
+}
+
+export async function createAgent(data: AgentFormData) {
+  return request<AgentData>("/agents", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateAgent(id: string, data: Partial<AgentFormData>) {
+  return request<AgentData>(`/agents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAgent(id: string) {
+  return request<{ message: string }>(`/agents/${id}`, { method: "DELETE" });
+}
+
+export async function testAgentAuth(id: string) {
+  return request<{ success: boolean; message: string }>(`/agents/${id}/test-auth`, {
+    method: "POST",
+  });
+}
+
 // Runs
 export async function getRuns() {
   return request<EvaluationRunData[]>("/runs");
@@ -77,13 +108,14 @@ export async function getRun(id: string) {
 
 export async function startRun(
   goldenSetId: string,
+  agentId: string,
   judgeModel?: string,
   entryIndices?: number[]
 ) {
   return request<EvaluationRunData>("/runs/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ goldenSetId, judgeModel, entryIndices }),
+    body: JSON.stringify({ goldenSetId, agentId, judgeModel, entryIndices }),
   });
 }
 
@@ -132,6 +164,24 @@ export function subscribeToRunProgress(
 }
 
 // Types
+export interface AgentData {
+  _id: string;
+  name: string;
+  url: string;
+  apiBaseUrl: string;
+  username: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface AgentFormData {
+  name: string;
+  url: string;
+  apiBaseUrl: string;
+  username: string;
+  password: string;
+}
+
 export interface GoldenSetSummary {
   _id: string;
   name: string;
@@ -175,6 +225,8 @@ export interface EvaluationRunData {
   _id: string;
   goldenSetId: string;
   goldenSetName: string;
+  agentId: string;
+  agentName: string;
   status: "pending" | "running" | "completed" | "failed";
   progress: number;
   judgeModel: string;

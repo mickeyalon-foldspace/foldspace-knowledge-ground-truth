@@ -31,6 +31,7 @@ const STAGE_LABELS: Record<string, { label: string; icon: string }> = {
   prompting_agent: { label: "Prompting agent", icon: "🤖" },
   judging_response: { label: "Analyzing with LLM judge", icon: "⚖️" },
   extracting_analysis: { label: "Extracting knowledge articles", icon: "📚" },
+  fetching_analysis: { label: "Fetching analysis data", icon: "📡" },
   question_complete: { label: "Question done", icon: "✅" },
   question_error: { label: "Question failed", icon: "❌" },
   computing_summary: { label: "Computing summary", icon: "📊" },
@@ -72,8 +73,13 @@ export default function RunCard({
             </span>
           </div>
           <p className="text-xs text-gray-500">
-            Model: {run.judgeModel} &middot;{" "}
-            {new Date(run.createdAt).toLocaleString()}
+            {run.agentName && (
+              <span className="font-medium text-gray-600">
+                {run.agentName}
+              </span>
+            )}
+            {run.agentName && " · "}
+            Model: {run.judgeModel} · {new Date(run.createdAt).toLocaleString()}
           </p>
         </div>
       </div>

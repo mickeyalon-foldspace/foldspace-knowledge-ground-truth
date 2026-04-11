@@ -6,6 +6,7 @@ import Navbar from "@/components/Navbar";
 import RunCard from "@/components/RunCard";
 import {
   getRuns,
+  getAgents,
   getGoldenSets,
   getGoldenSet,
   startRun,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/api";
 import type {
   EvaluationRunData,
+  AgentData,
   GoldenSetSummary,
   GoldenSetEntry,
   RunProgress,
@@ -40,7 +42,9 @@ interface LiveRunState {
 export default function RunsPage() {
   const router = useRouter();
   const [runs, setRuns] = useState<EvaluationRunData[]>([]);
+  const [agents, setAgents] = useState<AgentData[]>([]);
   const [goldenSets, setGoldenSets] = useState<GoldenSetSummary[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedSetId, setSelectedSetId] = useState("");
   const [selectedModel, setSelectedModel] = useState(JUDGE_MODELS[0]);
   const [isStarting, setIsStarting] = useState(false);
@@ -64,9 +68,17 @@ export default function RunsPage() {
 
   const fetchData = async () => {
     try {
-      const [r, g] = await Promise.all([getRuns(), getGoldenSets()]);
+      const [r, a, g] = await Promise.all([
+        getRuns(),
+        getAgents(),
+        getGoldenSets(),
+      ]);
       setRuns(r);
+      setAgents(a);
       setGoldenSets(g);
+      if (a.length > 0 && !selectedAgentId) {
+        setSelectedAgentId(a[0]._id);
+      }
       if (g.length > 0 && !selectedSetId) {
         setSelectedSetId(g[0]._id);
       }
@@ -198,7 +210,7 @@ export default function RunsPage() {
   };
 
   const handleStartRun = async () => {
-    if (!selectedSetId || selectedEntries.size === 0) return;
+    if (!selectedSetId || !selectedAgentId || selectedEntries.size === 0) return;
     setIsStarting(true);
     setError(null);
     try {
@@ -206,7 +218,7 @@ export default function RunsPage() {
         selectedEntries.size === setEntries.length
           ? undefined
           : Array.from(selectedEntries).sort((a, b) => a - b);
-      await startRun(selectedSetId, selectedModel, indices);
+      await startRun(selectedSetId, selectedAgentId, selectedModel, indices);
       setTab("active");
       await fetchData();
     } catch (e) {
@@ -280,7 +292,26 @@ export default function RunsPage() {
             Start New Run
           </h2>
           <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[180px]">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Agent
+              </label>
+              <select
+                value={selectedAgentId}
+                onChange={(e) => setSelectedAgentId(e.target.value)}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {agents.length === 0 && (
+                  <option value="">No agents configured</option>
+                )}
+                {agents.map((a) => (
+                  <option key={a._id} value={a._id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[180px]">
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Golden Set
               </label>
@@ -296,7 +327,7 @@ export default function RunsPage() {
                 ))}
               </select>
             </div>
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[180px]">
               <label className="block text-xs font-medium text-gray-600 mb-1">
                 Judge Model
               </label>
@@ -315,7 +346,10 @@ export default function RunsPage() {
             <button
               onClick={handleStartRun}
               disabled={
-                isStarting || !selectedSetId || selectedEntries.size === 0
+                isStarting ||
+                !selectedSetId ||
+                !selectedAgentId ||
+                selectedEntries.size === 0
               }
               className="bg-blue-600 text-white rounded-md px-6 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >

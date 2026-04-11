@@ -20,6 +20,8 @@ export interface IRunSummary {
 export interface IEvaluationRun extends Document {
   goldenSetId: Types.ObjectId;
   goldenSetName: string;
+  agentId: Types.ObjectId;
+  agentName: string;
   status: "pending" | "running" | "completed" | "failed";
   progress: number;
   judgeModel: string;
@@ -53,6 +55,12 @@ const evaluationRunSchema = new Schema<IEvaluationRun>(
       required: true,
     },
     goldenSetName: { type: String, required: true },
+    agentId: {
+      type: Schema.Types.ObjectId,
+      ref: "Agent",
+      required: true,
+    },
+    agentName: { type: String, required: true },
     status: {
       type: String,
       enum: ["pending", "running", "completed", "failed"],

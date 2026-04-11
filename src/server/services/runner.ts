@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { Types } from "mongoose";
 import { GoldenSet, IGoldenSetEntry } from "../models/GoldenSet.js";
+import { Agent } from "../models/Agent.js";
 import {
   EvaluationRun,
   IEvaluationRun,
@@ -10,7 +11,7 @@ import {
   EvaluationResult,
   IEvaluationResult,
 } from "../models/EvaluationResult.js";
-import { PlaywrightEngine } from "./playwright-engine.js";
+import { PlaywrightEngine, AgentCredentials } from "./playwright-engine.js";
 import { JudgeService } from "./judge.js";
 
 export interface RunProgress {
@@ -39,12 +40,18 @@ export class EvaluationRunner {
 
   async startRun(
     goldenSetId: string,
+    agentId: string,
     judgeModel?: string,
     entryIndices?: number[]
   ): Promise<IEvaluationRun> {
     const goldenSet = await GoldenSet.findById(goldenSetId);
     if (!goldenSet) {
       throw new Error(`Golden set not found: ${goldenSetId}`);
+    }
+
+    const agent = await Agent.findById(agentId);
+    if (!agent) {
+      throw new Error(`Agent not found: ${agentId}`);
     }
 
     if (judgeModel) {
@@ -62,15 +69,36 @@ export class EvaluationRunner {
       throw new Error("No entries selected for evaluation");
     }
 
+    const agentCreds: AgentCredentials = {
+      url: agent.url,
+      apiBaseUrl: agent.apiBaseUrl,
+      username: agent.username,
+      password: agent.password,
+    };
+
+    // Verify authentication before creating the run
+    const testEngine = new PlaywrightEngine();
+    try {
+      await testEngine.initialize();
+      await testEngine.login(agentCreds);
+    } catch (err) {
+      await testEngine.close();
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Authentication check failed for agent "${agent.name}": ${msg}`);
+    }
+    await testEngine.close();
+
     const run = await EvaluationRun.create({
       goldenSetId: new Types.ObjectId(goldenSetId),
       goldenSetName: goldenSet.name,
+      agentId: new Types.ObjectId(agentId),
+      agentName: agent.name,
       status: "pending",
       progress: 0,
       judgeModel: this.judgeService.getModel(),
     });
 
-    this.executeRun(run._id!.toString(), entries).catch((err) => {
+    this.executeRun(run._id!.toString(), entries, agentCreds).catch((err) => {
       console.error(`Run ${run._id} failed:`, err);
     });
 
@@ -97,7 +125,8 @@ export class EvaluationRunner {
 
   private async executeRun(
     runId: string,
-    entries: IGoldenSetEntry[]
+    entries: IGoldenSetEntry[],
+    agentCreds: AgentCredentials
   ): Promise<void> {
     const controller = new AbortController();
     this.abortControllers.set(runId, controller);
@@ -114,7 +143,6 @@ export class EvaluationRunner {
         totalQuestions: entries.length,
       });
 
-      // Wire up granular stage reporting from Playwright
       this.playwrightEngine.setStageCallback((stage) => {
         this.emitProgress(runId, {
           status: "running",
@@ -125,7 +153,7 @@ export class EvaluationRunner {
       });
 
       await this.playwrightEngine.initialize();
-      await this.playwrightEngine.login();
+      await this.playwrightEngine.login(agentCreds);
       await this.playwrightEngine.navigateToPlayground();
 
       const allResults: IEvaluationResult[] = [];

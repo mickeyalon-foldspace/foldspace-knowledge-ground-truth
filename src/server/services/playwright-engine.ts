@@ -2,6 +2,13 @@ import { chromium, Browser, Page, BrowserContext } from "playwright";
 import { config } from "../config.js";
 import { ISearchKnowledge } from "../models/EvaluationResult.js";
 
+export interface AgentCredentials {
+  url: string;
+  apiBaseUrl: string;
+  username: string;
+  password: string;
+}
+
 export interface PlaywrightResult {
   question: string;
   actualAnswer: string;
@@ -18,6 +25,7 @@ export class PlaywrightEngine {
   private page: Page | null = null;
   private isLoggedIn = false;
   private onStage: StageCallback = () => {};
+  private credentials: AgentCredentials | null = null;
 
   setStageCallback(cb: StageCallback) {
     this.onStage = cb;
@@ -36,24 +44,27 @@ export class PlaywrightEngine {
     this.page = await this.context.newPage();
   }
 
-  async login(): Promise<void> {
+  async login(creds?: AgentCredentials): Promise<void> {
     if (!this.page) throw new Error("Browser not initialized");
     this.onStage("logging_in");
 
-    const { url, username, password } = config.foldspace;
+    if (creds) {
+      this.credentials = creds;
+    }
+
+    const url = this.credentials?.url || config.foldspace.url;
+    const username = this.credentials?.username || config.foldspace.username;
+    const password = this.credentials?.password || config.foldspace.password;
+
     if (!username || !password) {
-      throw new Error(
-        "FOLDSPACE_USERNAME and FOLDSPACE_PASSWORD must be set in .env"
-      );
+      throw new Error("Agent username and password are required");
     }
 
     await this.page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
 
-    // Fill MUI login form
     await this.page.locator('input[name="email"]').fill(username);
     await this.page.locator('input[name="password"]').fill(password);
 
-    // Submit and wait for navigation
     await Promise.all([
       this.page
         .waitForNavigation({ timeout: 30000 })
@@ -65,8 +76,20 @@ export class PlaywrightEngine {
     await this.page.waitForLoadState("networkidle").catch(() => {});
     await this.page.waitForTimeout(2000);
 
+    // Verify login succeeded by checking we're no longer on the login page
+    const currentUrl = this.page.url();
+    const onLoginPage = await this.page
+      .locator('input[name="email"]')
+      .isVisible()
+      .catch(() => false);
+    if (onLoginPage) {
+      throw new Error(
+        `Login failed — still on login page (${currentUrl}). Check credentials.`
+      );
+    }
+
     this.isLoggedIn = true;
-    console.log("Successfully logged in to Foldspace");
+    console.log(`Logged in to ${url}`);
   }
 
   async navigateToPlayground(): Promise<void> {
@@ -265,7 +288,8 @@ export class PlaywrightEngine {
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const apiUrl = `${config.foldspace.apiBaseUrl}/admin/ai/chats/${chatId}`;
+    const base = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    const apiUrl = `${base}/admin/ai/chats/${chatId}`;
 
     return (await this.page.evaluate(async (url: string) => {
       var resp = await fetch(url, {
@@ -288,7 +312,8 @@ export class PlaywrightEngine {
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const apiUrl = `${config.foldspace.apiBaseUrl}/v1/agent/playground/message`;
+    const base = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    const apiUrl = `${base}/v1/agent/playground/message`;
 
     return (await this.page.evaluate(
       async (params: { apiUrl: string; chatId: string; messageId: string }) => {

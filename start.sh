@@ -19,13 +19,6 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
-# ── Start MongoDB (Docker) ─────────────────────────────────────────
-if command -v docker &>/dev/null && [ -f "$DIR/docker-compose.yml" ]; then
-  echo "Starting MongoDB via docker-compose..."
-  docker compose -f "$DIR/docker-compose.yml" up -d 2>/dev/null || \
-    docker-compose -f "$DIR/docker-compose.yml" up -d 2>/dev/null || true
-fi
-
 # ── Start backend server ───────────────────────────────────────────
 echo "Starting backend server on port 3001..."
 cd "$DIR"

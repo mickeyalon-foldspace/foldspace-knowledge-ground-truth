@@ -36,14 +36,19 @@ router.get("/:id", async (req: Request, res: Response) => {
 // Start a new evaluation run
 router.post("/start", async (req: Request, res: Response) => {
   try {
-    const { goldenSetId, judgeModel, entryIndices } = req.body;
+    const { goldenSetId, agentId, judgeModel, entryIndices } = req.body;
     if (!goldenSetId) {
       res.status(400).json({ error: "goldenSetId is required" });
+      return;
+    }
+    if (!agentId) {
+      res.status(400).json({ error: "agentId is required" });
       return;
     }
 
     const run = await evaluationRunner.startRun(
       goldenSetId,
+      agentId,
       judgeModel,
       Array.isArray(entryIndices) ? entryIndices : undefined
     );
