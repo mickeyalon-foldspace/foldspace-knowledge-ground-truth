@@ -1,0 +1,47 @@
+{
+  "name": "foldspace-knowledge-ground-truth",
+  "version": "1.0.0",
+  "description": "Ground truth evaluation service for Foldspace FSR Copilot",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:client": "cd src/client && next dev --port 3000",
+    "build:client": "cd src/client && next build",
+    "start": "node dist/server/index.js",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.6.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "multer": "^1.4.5-lts.1",
+    "next": "^15.1.0",
+    "playwright": "^1.49.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "recharts": "^2.15.0",
+    "xlsx": "^0.18.5",
+    "zod": "^3.24.1",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.18.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
