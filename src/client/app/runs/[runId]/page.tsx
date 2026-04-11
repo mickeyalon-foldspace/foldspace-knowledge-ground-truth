@@ -84,10 +84,18 @@ export default function RunDetailPage() {
           <>
             {/* Run info */}
             <div className="bg-white rounded-lg border p-4 mb-6">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Status</span>
                   <p className="font-medium capitalize">{run.status}</p>
+                </div>
+                <div>
+                  <span className="text-gray-500">Executed</span>
+                  <p className="font-medium">
+                    {run.startedAt
+                      ? new Date(run.startedAt).toLocaleString()
+                      : new Date(run.createdAt).toLocaleString()}
+                  </p>
                 </div>
                 <div>
                   <span className="text-gray-500">Judge Model</span>

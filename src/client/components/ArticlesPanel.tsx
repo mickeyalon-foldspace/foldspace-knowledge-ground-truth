@@ -1,62 +1,75 @@
 "use client";
 
 import { useState } from "react";
-import type { RetrievedArticle } from "@/lib/api";
+import type { SearchKnowledge } from "@/lib/api";
 
 interface ArticlesPanelProps {
-  articles: RetrievedArticle[];
+  searchKnowledge?: SearchKnowledge;
 }
 
-export default function ArticlesPanel({ articles }: ArticlesPanelProps) {
-  const [expandedArticle, setExpandedArticle] = useState<number | null>(null);
+export default function ArticlesPanel({ searchKnowledge }: ArticlesPanelProps) {
+  const [expandedChunk, setExpandedChunk] = useState<number | null>(null);
 
-  if (articles.length === 0) {
+  if (!searchKnowledge || searchKnowledge.chunks.length === 0) {
     return (
       <p className="text-sm text-gray-500 italic">
-        No knowledge articles retrieved.
+        No knowledge chunks retrieved.
       </p>
     );
   }
 
   return (
-    <div className="space-y-2">
-      <h4 className="text-sm font-medium text-gray-700">
-        Retrieved Articles ({articles.length})
-      </h4>
-      {articles.map((article, idx) => (
-        <div
-          key={idx}
-          className="border border-gray-200 rounded-md overflow-hidden"
-        >
-          <button
-            onClick={() =>
-              setExpandedArticle(expandedArticle === idx ? null : idx)
-            }
-            className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 transition-colors"
-          >
-            <span className="font-medium text-gray-900">{article.title}</span>
-            <span className="text-xs text-gray-500">
-              {article.chunkCount} chunk{article.chunkCount !== 1 ? "s" : ""}
-              <span className="ml-2">{expandedArticle === idx ? "−" : "+"}</span>
-            </span>
-          </button>
-          {expandedArticle === idx && (
-            <div className="px-3 py-2 space-y-2 bg-white">
-              {article.chunks.map((chunk, cIdx) => (
-                <div
-                  key={cIdx}
-                  className="text-xs text-gray-700 bg-gray-50 rounded p-2 border border-gray-100"
-                >
-                  <div className="font-medium text-gray-500 mb-1">
-                    Chunk {cIdx + 1}
-                  </div>
-                  <div className="whitespace-pre-wrap">{chunk.content}</div>
-                </div>
-              ))}
-            </div>
-          )}
+    <div className="space-y-3">
+      {searchKnowledge.queries.length > 0 && (
+        <div>
+          <h4 className="text-xs font-medium text-gray-500 uppercase mb-1">
+            Search Queries
+          </h4>
+          <div className="flex flex-wrap gap-1.5">
+            {searchKnowledge.queries.map((q, i) => (
+              <span
+                key={i}
+                className="inline-block text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5"
+              >
+                {q}
+              </span>
+            ))}
+          </div>
         </div>
-      ))}
+      )}
+
+      <div>
+        <h4 className="text-sm font-medium text-gray-700">
+          Retrieved Chunks ({searchKnowledge.chunks.length})
+        </h4>
+        <div className="mt-1 space-y-1.5">
+          {searchKnowledge.chunks.map((chunk, idx) => (
+            <div
+              key={chunk.chunkId || idx}
+              className="border border-gray-200 rounded-md overflow-hidden"
+            >
+              <button
+                onClick={() =>
+                  setExpandedChunk(expandedChunk === idx ? null : idx)
+                }
+                className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+              >
+                <span className="font-medium text-gray-900 truncate">
+                  {chunk.title}
+                </span>
+                <span className="ml-2 text-xs text-gray-400 shrink-0">
+                  {expandedChunk === idx ? "−" : "+"}
+                </span>
+              </button>
+              {expandedChunk === idx && (
+                <div className="px-3 py-2 bg-white text-xs text-gray-700 whitespace-pre-wrap border-t border-gray-100 max-h-64 overflow-auto">
+                  {chunk.content}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

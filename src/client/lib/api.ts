@@ -200,6 +200,18 @@ export interface JudgeScores {
   languageMatch: boolean;
 }
 
+export interface RetrievedChunk {
+  chunkId: string;
+  title: string;
+  content: string;
+}
+
+export interface SearchKnowledge {
+  queries: string[];
+  chunks: RetrievedChunk[];
+}
+
+/** @deprecated kept for backward compat */
 export interface RetrievedArticle {
   title: string;
   chunkCount: number;
@@ -217,6 +229,7 @@ export interface EvaluationResultData {
   category?: string;
   topic?: string;
   judgeScores: JudgeScores;
+  searchKnowledge?: SearchKnowledge;
   retrievedArticles: RetrievedArticle[];
   responseTimeMs: number;
   createdAt: string;

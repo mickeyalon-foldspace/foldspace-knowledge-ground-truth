@@ -160,12 +160,19 @@ export class EvaluationRunner {
             currentEntry: entry.question.substring(0, 80),
           });
 
+          // Convert chunks to the format the judge expects
+          const judgeArticles = pwResult.searchKnowledge.chunks.map((c) => ({
+            title: c.title,
+            chunkCount: 1,
+            chunks: [{ content: c.content, metadata: {} }],
+          }));
+
           const judgeScores = await this.judgeService.evaluate({
             question: entry.question,
             expectedAnswer: entry.expectedAnswer,
             actualAnswer: pwResult.actualAnswer,
             language: entry.language,
-            retrievedArticles: pwResult.retrievedArticles,
+            retrievedArticles: judgeArticles,
           });
 
           const result = await EvaluationResult.create({
@@ -178,7 +185,8 @@ export class EvaluationRunner {
             category: entry.category,
             topic: entry.topic,
             judgeScores,
-            retrievedArticles: pwResult.retrievedArticles,
+            searchKnowledge: pwResult.searchKnowledge,
+            retrievedArticles: judgeArticles,
             responseTimeMs: pwResult.responseTimeMs,
             rawApiResponses: pwResult.rawApiResponses,
           });

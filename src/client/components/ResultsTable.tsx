@@ -54,7 +54,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
               Overall
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Articles
+              Chunks
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Time
@@ -117,9 +117,9 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                     <ScoreBadge score={result.judgeScores.overallScore} />
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
-                    {result.retrievedArticles.length > 0 ? (
+                    {(result.searchKnowledge?.chunks?.length || 0) > 0 ? (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
-                        {result.retrievedArticles.length}
+                        {result.searchKnowledge!.chunks.length}
                       </span>
                     ) : (
                       <span className="text-gray-300">0</span>
@@ -183,7 +183,7 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                         </div>
                         <div>
                           <ArticlesPanel
-                            articles={result.retrievedArticles}
+                            searchKnowledge={result.searchKnowledge}
                           />
                         </div>
                       </div>

@@ -10,6 +10,18 @@ export interface IJudgeScores {
   languageMatch: boolean;
 }
 
+export interface IRetrievedChunk {
+  chunkId: string;
+  title: string;
+  content: string;
+}
+
+export interface ISearchKnowledge {
+  queries: string[];
+  chunks: IRetrievedChunk[];
+}
+
+/** @deprecated Use IRetrievedChunk instead */
 export interface IRetrievedArticle {
   title: string;
   chunkCount: number;
@@ -29,6 +41,7 @@ export interface IEvaluationResult extends Document {
   category?: string;
   topic?: string;
   judgeScores: IJudgeScores;
+  searchKnowledge: ISearchKnowledge;
   retrievedArticles: IRetrievedArticle[];
   responseTimeMs: number;
   rawApiResponses?: unknown[];
@@ -43,7 +56,24 @@ const judgeScoreDetail = new Schema(
   { _id: false }
 );
 
-const chunkSchema = new Schema(
+const retrievedChunkSchema = new Schema(
+  {
+    chunkId: { type: String, required: true },
+    title: { type: String, required: true },
+    content: { type: String, required: true },
+  },
+  { _id: false }
+);
+
+const searchKnowledgeSchema = new Schema(
+  {
+    queries: { type: [String], default: [] },
+    chunks: { type: [retrievedChunkSchema], default: [] },
+  },
+  { _id: false }
+);
+
+const legacyChunkSchema = new Schema(
   {
     content: { type: String, required: true },
     metadata: { type: Schema.Types.Mixed },
@@ -55,7 +85,7 @@ const retrievedArticleSchema = new Schema(
   {
     title: { type: String, required: true },
     chunkCount: { type: Number, required: true },
-    chunks: { type: [chunkSchema], default: [] },
+    chunks: { type: [legacyChunkSchema], default: [] },
   },
   { _id: false }
 );
@@ -89,6 +119,7 @@ const evaluationResultSchema = new Schema<IEvaluationResult>(
     category: { type: String },
     topic: { type: String },
     judgeScores: { type: judgeScoresSchema, required: true },
+    searchKnowledge: { type: searchKnowledgeSchema, default: { queries: [], chunks: [] } },
     retrievedArticles: { type: [retrievedArticleSchema], default: [] },
     responseTimeMs: { type: Number, required: true },
     rawApiResponses: { type: [Schema.Types.Mixed] },

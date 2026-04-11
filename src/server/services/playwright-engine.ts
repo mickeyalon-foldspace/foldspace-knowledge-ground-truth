@@ -1,11 +1,11 @@
 import { chromium, Browser, Page, BrowserContext } from "playwright";
 import { config } from "../config.js";
-import { IRetrievedArticle } from "../models/EvaluationResult.js";
+import { ISearchKnowledge } from "../models/EvaluationResult.js";
 
 export interface PlaywrightResult {
   question: string;
   actualAnswer: string;
-  retrievedArticles: IRetrievedArticle[];
+  searchKnowledge: ISearchKnowledge;
   responseTimeMs: number;
   rawApiResponses: unknown[];
 }
@@ -206,19 +206,17 @@ export class PlaywrightEngine {
     // 1. GET /admin/ai/chats/{chatId} → messages[] → find assistant messageId
     // 2. POST /agent/playground/message { chatId, messageId } → functions[].result.data[]
     this.onStage("fetching_analysis");
-    let retrievedArticles: IRetrievedArticle[] = [];
+    let searchKnowledge: ISearchKnowledge = { queries: [], chunks: [] };
     const rawApiResponses: unknown[] = [];
 
     if (chatId) {
       try {
-        // Step 1: get the full chat to find the assistant message ID
         const chatData = await this.fetchChatData(chatId);
         rawApiResponses.push({ type: "chat", data: chatData });
 
         const messages = (chatData as any)?.messages;
         let messageId = "";
         if (Array.isArray(messages)) {
-          // The assistant message is the last non-user message
           for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i];
             if (msg.id && msg.type !== "USER_MESSAGE") {
@@ -229,16 +227,15 @@ export class PlaywrightEngine {
         }
 
         if (messageId) {
-          // Step 2: fetch the detailed message analysis
           const analysisData = await this.fetchMessageAnalysis(
             chatId,
             messageId
           );
           rawApiResponses.push({ type: "analysis", data: analysisData });
-          retrievedArticles =
-            this.extractArticlesFromAnalysis(analysisData);
+          searchKnowledge =
+            this.extractSearchKnowledge(analysisData);
           console.log(
-            `Fetched analysis: ${retrievedArticles.length} articles (chatId=${chatId}, messageId=${messageId})`
+            `Fetched analysis: ${searchKnowledge.chunks.length} chunks, ${searchKnowledge.queries.length} queries (chatId=${chatId}, messageId=${messageId})`
           );
         } else {
           console.warn("No assistant message ID found in chat data");
@@ -253,7 +250,7 @@ export class PlaywrightEngine {
     return {
       question,
       actualAnswer: responseText.trim(),
-      retrievedArticles,
+      searchKnowledge,
       responseTimeMs,
       rawApiResponses,
     };
@@ -315,61 +312,57 @@ export class PlaywrightEngine {
   }
 
   /**
-   * Extract articles from the playground/message API response.
-   * Structure: body.functions[] -> { functionName: "search_knowledge", result.data[] }
-   * Each data item: { id, title, content }
+   * Extract search queries and retrieved chunks from the playground/message API.
+   * Structure: functions[] -> { functionName: "search_knowledge",
+   *   arguments: { queryArray: string[] },
+   *   result: { data: [{ id, title, content }] } }
    */
-  private extractArticlesFromAnalysis(
+  private extractSearchKnowledge(
     data: Record<string, unknown>
-  ): IRetrievedArticle[] {
-    const articles: IRetrievedArticle[] = [];
-    const seenTitles = new Set<string>();
-
-    if (data.error) return articles;
+  ): ISearchKnowledge {
+    const result: ISearchKnowledge = { queries: [], chunks: [] };
+    if (data.error) return result;
 
     try {
       const functions = data.functions as any[];
-      if (Array.isArray(functions)) {
-        for (const fn of functions) {
-          if (
-            fn.functionName === "search_knowledge" &&
-            fn.result?.data &&
-            Array.isArray(fn.result.data)
-          ) {
-            for (const item of fn.result.data) {
-              const title = item.title || item.name || "Unknown Article";
-              if (seenTitles.has(title)) continue;
-              seenTitles.add(title);
+      if (!Array.isArray(functions)) return result;
 
-              const content = (item.content as string) || "";
-              const sections = content
-                .split(/(?=^#{1,3}\s)/m)
-                .map((s: string) => s.trim())
-                .filter((s: string) => s.length > 10);
+      const seenIds = new Set<string>();
 
-              const chunks =
-                sections.length > 0
-                  ? sections.map((s: string) => ({
-                      content: s.substring(0, 1000),
-                      metadata: { articleId: item.id || "" },
-                    }))
-                  : [
-                      {
-                        content: content.substring(0, 2000),
-                        metadata: { articleId: item.id || "" },
-                      },
-                    ];
+      for (const fn of functions) {
+        if (fn.functionName !== "search_knowledge") continue;
 
-              articles.push({ title, chunkCount: chunks.length, chunks });
+        // Extract search queries from arguments
+        const queryArray = fn.arguments?.queryArray;
+        if (Array.isArray(queryArray)) {
+          for (const q of queryArray) {
+            if (q && !result.queries.includes(q)) {
+              result.queries.push(q);
             }
           }
+        }
+
+        // Extract chunks from result.data — each item is one chunk
+        const items = fn.result?.data;
+        if (!Array.isArray(items)) continue;
+
+        for (const item of items) {
+          const chunkId = item.id || "";
+          if (chunkId && seenIds.has(chunkId)) continue;
+          if (chunkId) seenIds.add(chunkId);
+
+          result.chunks.push({
+            chunkId,
+            title: item.title || item.name || "Untitled",
+            content: (item.content as string) || "",
+          });
         }
       }
     } catch {
       // Best-effort
     }
 
-    return articles;
+    return result;
   }
 
   async close(): Promise<void> {
