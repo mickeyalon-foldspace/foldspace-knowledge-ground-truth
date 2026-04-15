@@ -1,0 +1,11 @@
+node_modules
+dist
+src/client
+.next
+.env
+.git
+.DS_Store
+.pids
+.server.log
+.client.log
+screenshots

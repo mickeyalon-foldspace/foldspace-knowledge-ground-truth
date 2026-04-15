@@ -31,8 +31,9 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    "../../dist/client/types/**/*.ts",
     "next-env.d.ts",
-    "../../dist/client/types/**/*.ts"
+    ".next/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

@@ -8,6 +8,7 @@
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "cd src/client && next dev --port 3000",
     "build:client": "cd src/client && next build",
+    "build:server": "tsc",
     "start": "node dist/server/index.js",
     "lint": "eslint src/"
   },
