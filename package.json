@@ -10,6 +10,7 @@
     "build:client": "cd src/client && next build",
     "build:server": "tsc",
     "start": "node dist/server/index.js",
+    "start:client": "cd src/client && next start --port 3000",
     "lint": "eslint src/"
   },
   "dependencies": {
