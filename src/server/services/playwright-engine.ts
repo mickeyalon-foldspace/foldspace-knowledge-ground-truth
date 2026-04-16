@@ -10,7 +10,6 @@ if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: 
 
 export interface AgentCredentials {
   url: string;
-  playgroundUrl?: string;
   apiBaseUrl: string;
   username: string;
   password: string;
@@ -159,24 +158,26 @@ export class PlaywrightEngine {
     if (!this.isLoggedIn) await this.login();
     this.onStage("navigating_to_playground");
 
-    // Navigate to the playground URL (the page with the Copilot button)
-    const playgroundUrl = this.credentials?.playgroundUrl;
-    if (playgroundUrl) {
-      this.appendLog(`Navigating to playground URL: ${playgroundUrl}`);
-      await this.page.goto(playgroundUrl, { waitUntil: "networkidle", timeout: 90000 });
-      await this.page.waitForTimeout(2000);
-      this.appendLog(`Playground page loaded: ${this.page.url()}`);
-    } else {
-      this.appendLog(`No playground URL set, staying on current page: ${this.page.url()}`);
-    }
+    // Navigate to the playground page (apiBaseUrl holds the playground URL)
+    const playgroundUrl = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    this.appendLog(`Navigating to playground: ${playgroundUrl}`);
+    await this.page.goto(playgroundUrl, { waitUntil: "networkidle", timeout: 90000 });
 
-    this.appendLog("Looking for PSR Copilot button...");
+    // Wait for the page to fully render
+    await this.page.waitForLoadState("domcontentloaded");
+    await this.page.waitForTimeout(5000);
+    this.appendLog(`Page ready: ${this.page.url()}`);
+
+    // Wait for the Copilot button to appear (up to 30s)
+    this.appendLog("Waiting for PSR Copilot button...");
     const btn = this.page.locator('button[aria-label="PSR Copilot"]');
-    const visible = await btn.isVisible().catch(() => false);
-
-    if (!visible) {
+    try {
+      await btn.waitFor({ state: "visible", timeout: 30000 });
+      this.appendLog("PSR Copilot button found");
+    } catch {
       await this.screenshot("copilot-button-not-found");
-      this.appendLog(`PSR Copilot button not visible on ${this.page.url()} — screenshot saved`);
+      this.appendLog(`PSR Copilot button not visible after 30s on ${this.page.url()} — screenshot saved`);
+      throw new Error(`PSR Copilot button not found on ${this.page.url()}`);
     }
 
     await btn.click();
@@ -382,12 +383,22 @@ export class PlaywrightEngine {
    * Fetch conversation data including all messages.
    * GET {apiBaseUrl}/admin/ai/chats/{chatId}
    */
+  private getApiOrigin(): string {
+    const url = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    try {
+      const parsed = new URL(url);
+      return parsed.origin;
+    } catch {
+      return url;
+    }
+  }
+
   private async fetchChatData(
     chatId: string
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const base = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    const base = this.getApiOrigin();
     const apiUrl = `${base}/admin/ai/chats/${chatId}`;
 
     return (await this.page.evaluate(async (url: string) => {
@@ -411,7 +422,7 @@ export class PlaywrightEngine {
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const base = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+    const base = this.getApiOrigin();
     const apiUrl = `${base}/v1/agent/playground/message`;
 
     return (await this.page.evaluate(
