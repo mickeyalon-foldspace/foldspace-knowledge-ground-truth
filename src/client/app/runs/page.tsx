@@ -545,24 +545,43 @@ export default function RunsPage() {
                 : "No failed runs."}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tabRuns.map((run) => {
-              const live = liveStates[run._id] || {};
-              return (
-                <RunCard
-                  key={run._id}
-                  run={run}
-                  stage={live.stage}
-                  currentQuestion={live.currentQuestion}
-                  totalQuestions={live.totalQuestions}
-                  currentEntry={live.currentEntry}
-                  liveLogLines={liveLogs[run._id]}
-                  onView={(id) => router.push(`/runs/${id}`)}
-                  onDelete={isAdmin ? handleDelete : undefined}
-                  onCancel={isAdmin ? handleCancel : undefined}
-                />
-              );
-            })}
+          <div className="space-y-4">
+            {/* Active/failed runs get full width for the log terminal */}
+            {tabRuns
+              .filter((r) => r.status === "running" || r.status === "pending" || r.status === "failed")
+              .map((run) => {
+                const live = liveStates[run._id] || {};
+                return (
+                  <RunCard
+                    key={run._id}
+                    run={run}
+                    stage={live.stage}
+                    currentQuestion={live.currentQuestion}
+                    totalQuestions={live.totalQuestions}
+                    currentEntry={live.currentEntry}
+                    liveLogLines={liveLogs[run._id]}
+                    onView={(id) => router.push(`/runs/${id}`)}
+                    onDelete={isAdmin ? handleDelete : undefined}
+                    onCancel={isAdmin ? handleCancel : undefined}
+                  />
+                );
+              })}
+            {/* Completed runs in a grid */}
+            {tabRuns.some((r) => r.status === "completed") && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {tabRuns
+                  .filter((r) => r.status === "completed")
+                  .map((run) => (
+                    <RunCard
+                      key={run._id}
+                      run={run}
+                      liveLogLines={liveLogs[run._id]}
+                      onView={(id) => router.push(`/runs/${id}`)}
+                      onDelete={isAdmin ? handleDelete : undefined}
+                    />
+                  ))}
+              </div>
+            )}
           </div>
         )}
       </main>
