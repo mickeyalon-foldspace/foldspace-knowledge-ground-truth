@@ -194,6 +194,14 @@ export async function deleteRun(id: string) {
   return request<{ message: string }>(`/runs/${id}`, { method: "DELETE" });
 }
 
+export async function bulkDeleteRuns(ids: string[]) {
+  return request<{ message: string }>("/runs/bulk-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+}
+
 // Results
 export async function getRunResults(runId: string, filters?: ResultFilters) {
   const params = new URLSearchParams();

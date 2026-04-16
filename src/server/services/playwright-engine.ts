@@ -244,8 +244,8 @@ export class PlaywrightEngine {
     let lastTextLen = 0;
     let stableCount = 0;
 
-    this.appendLog("Waiting for response (up to 90 polls x 2s = 180s)...");
-    for (let attempt = 0; attempt < 90; attempt++) {
+    this.appendLog("Waiting for response (up to 30 polls x 2s = 60s)...");
+    for (let attempt = 0; attempt < 30; attempt++) {
       await this.page.waitForTimeout(2000);
 
       const result = await this.page.evaluate(() => {
@@ -293,9 +293,7 @@ export class PlaywrightEngine {
       }
       lastTextLen = result.text.length;
 
-      if (attempt % 10 === 9) {
-        this.appendLog(`Poll ${attempt + 1}/90: thinking=${result.thinking}, textLen=${result.text.length}, stable=${stableCount}, hasAnalysis=${result.hasAnalysis}`);
-      }
+      this.appendLog(`Poll ${attempt + 1}/30: thinking=${result.thinking}, textLen=${result.text.length}, stable=${stableCount}, hasAnalysis=${result.hasAnalysis}`);
 
       if (result.hasAnalysis || stableCount >= 3) {
         const lines = result.text.split("\n");
