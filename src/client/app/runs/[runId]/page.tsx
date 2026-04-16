@@ -7,7 +7,7 @@ import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ResultsTable from "@/components/ResultsTable";
 import { ScoreRadar, LanguageBarChart } from "@/components/ScoreChart";
-import { getRun, getRunResults, getRunStats } from "@/lib/api";
+import { getRun, getRunResults, getRunStats, exportRunCsv } from "@/lib/api";
 import type {
   EvaluationRunData,
   EvaluationResultData,
@@ -24,6 +24,7 @@ export default function RunDetailPage() {
   const [loading, setLoading] = useState(true);
   const [filterLang, setFilterLang] = useState<string>("");
   const [filterCategory, setFilterCategory] = useState<string>("");
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -65,17 +66,40 @@ export default function RunDetailPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center gap-2 mb-6">
-          <Link
-            href="/runs"
-            className="text-sm text-blue-600 hover:text-blue-800"
-          >
-            Runs
-          </Link>
-          <span className="text-gray-400">/</span>
-          <h1 className="text-2xl font-bold text-gray-900">
-            {run?.goldenSetName || "Run Details"}
-          </h1>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Link
+              href="/runs"
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Runs
+            </Link>
+            <span className="text-gray-400">/</span>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {run?.goldenSetName || "Run Details"}
+            </h1>
+          </div>
+          {run?.status === "completed" && results.length > 0 && (
+            <button
+              onClick={async () => {
+                setExporting(true);
+                try {
+                  await exportRunCsv(runId);
+                } catch (e) {
+                  console.error("Export failed:", e);
+                } finally {
+                  setExporting(false);
+                }
+              }}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {exporting ? "Exporting..." : "Export CSV for Google Sheets"}
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -86,7 +110,7 @@ export default function RunDetailPage() {
           <>
             {/* Run info */}
             <div className="bg-white rounded-lg border p-4 mb-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 text-sm">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-sm">
                 <div>
                   <span className="text-gray-500">Status</span>
                   <p className="font-medium capitalize">{run.status}</p>
@@ -118,14 +142,6 @@ export default function RunDetailPage() {
                   <p className="font-medium text-lg">
                     {run.summary?.avgOverallScore?.toFixed(2) || "N/A"}
                     <span className="text-xs text-gray-400"> / 5</span>
-                  </p>
-                </div>
-                <div>
-                  <span className="text-gray-500">Duration</span>
-                  <p className="font-medium">
-                    {run.startedAt && run.completedAt
-                      ? `${((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(0)}s`
-                      : "N/A"}
                   </p>
                 </div>
               </div>
@@ -189,9 +205,6 @@ export default function RunDetailPage() {
                       <th className="text-center py-2 px-2 text-xs text-gray-500">
                         Lang Match
                       </th>
-                      <th className="text-center py-2 px-2 text-xs text-gray-500">
-                        Avg Time
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -221,9 +234,6 @@ export default function RunDetailPage() {
                         </td>
                         <td className="py-2 px-2 text-center">
                           {(s.languageMatchRate * 100).toFixed(0)}%
-                        </td>
-                        <td className="py-2 px-2 text-center">
-                          {(s.avgResponseTime / 1000).toFixed(1)}s
                         </td>
                       </tr>
                     ))}

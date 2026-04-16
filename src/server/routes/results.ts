@@ -106,4 +106,88 @@ router.get("/run/:runId/stats", async (req: Request, res: Response) => {
   }
 });
 
+router.get("/run/:runId/export-csv", async (req: Request, res: Response) => {
+  try {
+    const runId = paramValue(req, "runId");
+    const results = await EvaluationResult.find({
+      runId,
+      orgId: req.user!.orgId,
+    })
+      .sort({ entryIndex: 1 })
+      .select("-rawApiResponses");
+
+    if (results.length === 0) {
+      res.status(404).json({ error: "No results found for this run" });
+      return;
+    }
+
+    const escapeCsv = (val: string) => {
+      if (val.includes('"') || val.includes(",") || val.includes("\n")) {
+        return `"${val.replace(/"/g, '""')}"`;
+      }
+      return val;
+    };
+
+    const headers = [
+      "#",
+      "Question",
+      "Expected Answer",
+      "Actual Answer",
+      "Language",
+      "Category",
+      "Topic",
+      "Correctness",
+      "Correctness Explanation",
+      "Completeness",
+      "Completeness Explanation",
+      "Relevance",
+      "Relevance Explanation",
+      "Faithfulness",
+      "Faithfulness Explanation",
+      "Overall Score",
+      "Language Match",
+      "Detected Language",
+      "Chunks Retrieved",
+      "Chunk Titles",
+    ];
+
+    const rows = results.map((r) => [
+      String(r.entryIndex + 1),
+      escapeCsv(r.question),
+      escapeCsv(r.expectedAnswer),
+      escapeCsv(r.actualAnswer),
+      r.language,
+      r.category || "",
+      r.topic || "",
+      String(r.judgeScores.correctness.score),
+      escapeCsv(r.judgeScores.correctness.explanation),
+      String(r.judgeScores.completeness.score),
+      escapeCsv(r.judgeScores.completeness.explanation),
+      String(r.judgeScores.relevance.score),
+      escapeCsv(r.judgeScores.relevance.explanation),
+      String(r.judgeScores.faithfulness.score),
+      escapeCsv(r.judgeScores.faithfulness.explanation),
+      String(r.judgeScores.overallScore),
+      r.judgeScores.languageMatch ? "Yes" : "No",
+      r.judgeScores.detectedLanguage || "",
+      String(r.searchKnowledge?.chunks?.length || 0),
+      escapeCsv(
+        (r.searchKnowledge?.chunks || []).map((c) => c.title).join(" | ")
+      ),
+    ]);
+
+    const BOM = "\uFEFF";
+    const csv = BOM + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="evaluation-run-${runId}.csv"`
+    );
+    res.send(csv);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to export results" });
+  }
+});
+
 export default router;

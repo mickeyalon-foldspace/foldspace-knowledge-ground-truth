@@ -36,6 +36,13 @@ const JUDGE_MODELS = [
 type Tab = "active" | "completed" | "failed";
 type ViewMode = "card" | "table";
 
+const statusStyles: Record<string, string> = {
+  pending: "bg-gray-100 text-gray-800",
+  running: "bg-blue-100 text-blue-800 animate-pulse",
+  completed: "bg-green-100 text-green-800",
+  failed: "bg-red-100 text-red-800",
+};
+
 interface LiveRunState {
   stage?: string;
   currentQuestion?: number;

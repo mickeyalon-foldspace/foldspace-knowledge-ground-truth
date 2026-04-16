@@ -56,9 +56,6 @@ export default function ResultsTable({ results }: ResultsTableProps) {
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Chunks
             </th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Time
-            </th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -125,13 +122,10 @@ export default function ResultsTable({ results }: ResultsTableProps) {
                       <span className="text-gray-300">0</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center text-xs text-gray-500">
-                    {(result.responseTimeMs / 1000).toFixed(1)}s
-                  </td>
                 </tr>
                 {isExpanded && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-4 bg-gray-50">
+                    <td colSpan={10} className="px-4 py-4 bg-gray-50">
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div>
                           <h4 className="text-sm font-medium text-gray-700 mb-1">
