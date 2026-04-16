@@ -21,6 +21,27 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
+router.post(
+  "/bulk-delete",
+  requireRole("admin"),
+  async (req: Request, res: Response) => {
+    try {
+      const { ids } = req.body as { ids: string[] };
+      if (!ids || !Array.isArray(ids) || ids.length === 0) {
+        res.status(400).json({ error: "ids array required" });
+        return;
+      }
+      const { EvaluationResult } = await import("../models/EvaluationResult.js");
+      await EvaluationResult.deleteMany({ runId: { $in: ids }, orgId: req.user!.orgId });
+      await EvaluationRun.deleteMany({ _id: { $in: ids }, orgId: req.user!.orgId });
+      res.json({ message: `${ids.length} runs deleted` });
+    } catch (error) {
+      console.error("Bulk delete error:", error);
+      res.status(500).json({ error: "Failed to bulk delete runs" });
+    }
+  }
+);
+
 router.get("/:id", async (req: Request, res: Response) => {
   try {
     const run = await EvaluationRun.findOne({
@@ -126,26 +147,6 @@ router.delete(
       res.json({ message: "Run and results deleted" });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete run" });
-    }
-  }
-);
-
-router.post(
-  "/bulk-delete",
-  requireRole("admin"),
-  async (req: Request, res: Response) => {
-    try {
-      const { ids } = req.body as { ids: string[] };
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        res.status(400).json({ error: "ids array required" });
-        return;
-      }
-      const { EvaluationResult } = await import("../models/EvaluationResult.js");
-      await EvaluationResult.deleteMany({ runId: { $in: ids }, orgId: req.user!.orgId });
-      await EvaluationRun.deleteMany({ _id: { $in: ids }, orgId: req.user!.orgId });
-      res.json({ message: `${ids.length} runs deleted` });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to bulk delete runs" });
     }
   }
 );
