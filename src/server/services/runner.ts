@@ -23,6 +23,7 @@ export interface RunProgress {
   totalQuestions?: number;
   currentEntry?: string;
   error?: string;
+  logLine?: string;
 }
 
 class RunnerEventBus extends EventEmitter {}
@@ -101,7 +102,7 @@ export class EvaluationRunner {
     });
 
     this.executeRun(run._id!.toString(), entries, agentCreds, orgId).catch((err) => {
-      console.error(`Run ${run._id} failed:`, err);
+      console.error(`[Runner] Run ${run._id} failed:`, err);
     });
 
     return run;
@@ -146,11 +147,20 @@ export class EvaluationRunner {
         totalQuestions: entries.length,
       });
 
+      this.playwrightEngine.clearLogs();
       this.playwrightEngine.setStageCallback((stage) => {
         this.emitProgress(runId, {
           status: "running",
           progress: this.lastProgress.get(runId) || 0,
           stage,
+          totalQuestions: entries.length,
+        });
+      });
+      this.playwrightEngine.setLogCallback((line) => {
+        this.emitProgress(runId, {
+          status: "running",
+          progress: this.lastProgress.get(runId) || 0,
+          logLine: line,
           totalQuestions: entries.length,
         });
       });
@@ -234,11 +244,14 @@ export class EvaluationRunner {
             currentEntry: entry.question.substring(0, 80),
           });
 
-          await EvaluationRun.findByIdAndUpdate(runId, { progress });
+          await EvaluationRun.findByIdAndUpdate(runId, {
+            progress,
+            playwrightLog: this.playwrightEngine.getLogs(),
+          });
         } catch (entryError) {
+          const errMsg = entryError instanceof Error ? entryError.message : String(entryError);
           console.error(
-            `Error processing entry ${i} ("${entry.question.substring(0, 50)}"):`,
-            entryError
+            `[Runner] Error entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg}`
           );
 
           this.emitProgress(runId, {
@@ -305,6 +318,7 @@ export class EvaluationRunner {
         progress: 100,
         completedAt: new Date(),
         summary,
+        playwrightLog: this.playwrightEngine.getLogs(),
       });
 
       this.emitProgress(runId, {
@@ -319,6 +333,7 @@ export class EvaluationRunner {
         status: "failed",
         error: errorMsg,
         completedAt: new Date(),
+        playwrightLog: this.playwrightEngine.getLogs(),
       });
       this.emitProgress(runId, {
         status: "failed",

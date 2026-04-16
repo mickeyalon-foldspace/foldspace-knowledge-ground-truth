@@ -68,6 +68,7 @@ export default function RunsPage() {
   const [liveStates, setLiveStates] = useState<Record<string, LiveRunState>>(
     {}
   );
+  const [liveLogs, setLiveLogs] = useState<Record<string, string[]>>({});
   const cleanupRef = useRef<Map<string, () => void>>(new Map());
 
   const fetchData = async () => {
@@ -151,15 +152,27 @@ export default function RunsPage() {
         );
 
         // Update live stage
-        setLiveStates((prev) => ({
-          ...prev,
-          [runId]: {
-            stage: progress.stage,
-            currentQuestion: progress.currentQuestion,
-            totalQuestions: progress.totalQuestions,
-            currentEntry: progress.currentEntry,
-          },
-        }));
+        if (progress.stage) {
+          setLiveStates((prev) => ({
+            ...prev,
+            [runId]: {
+              stage: progress.stage,
+              currentQuestion: progress.currentQuestion,
+              totalQuestions: progress.totalQuestions,
+              currentEntry: progress.currentEntry,
+            },
+          }));
+        }
+
+        // Collect live log lines
+        if (progress.logLine) {
+          setLiveLogs((prev) => {
+            const existing = prev[runId] || [];
+            const updated = [...existing, progress.logLine!];
+            if (updated.length > 100) updated.splice(0, updated.length - 100);
+            return { ...prev, [runId]: updated };
+          });
+        }
 
         if (
           progress.status === "completed" ||
@@ -543,6 +556,7 @@ export default function RunsPage() {
                   currentQuestion={live.currentQuestion}
                   totalQuestions={live.totalQuestions}
                   currentEntry={live.currentEntry}
+                  liveLogLines={liveLogs[run._id]}
                   onView={(id) => router.push(`/runs/${id}`)}
                   onDelete={isAdmin ? handleDelete : undefined}
                   onCancel={isAdmin ? handleCancel : undefined}

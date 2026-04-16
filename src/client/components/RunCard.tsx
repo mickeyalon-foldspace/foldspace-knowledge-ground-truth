@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { EvaluationRunData } from "@/lib/api";
 
 interface RunCardProps {
@@ -8,6 +9,7 @@ interface RunCardProps {
   currentQuestion?: number;
   totalQuestions?: number;
   currentEntry?: string;
+  liveLogLines?: string[];
   onView: (runId: string) => void;
   onDelete?: (runId: string) => void;
   onCancel?: (runId: string) => void;
@@ -46,13 +48,19 @@ export default function RunCard({
   currentQuestion,
   totalQuestions,
   currentEntry,
+  liveLogLines,
   onView,
   onDelete,
   onCancel,
 }: RunCardProps) {
+  const [showLogs, setShowLogs] = useState(false);
   const statusClass = statusStyles[run.status] || statusStyles.pending;
   const stageInfo = stage ? STAGE_LABELS[stage] : null;
   const isActive = run.status === "running" || run.status === "pending";
+  const logLines = isActive
+    ? (liveLogLines || [])
+    : (run.playwrightLog || []);
+  const hasLogs = logLines.length > 0;
 
   return (
     <div
@@ -144,9 +152,27 @@ export default function RunCard({
       )}
 
       {run.error && (
-        <p className="mt-2 text-xs text-red-600 truncate">
+        <p className="mt-2 text-xs text-red-600">
           Error: {run.error}
         </p>
+      )}
+
+      {hasLogs && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowLogs(!showLogs)}
+            className="text-xs text-gray-500 hover:text-gray-700 underline"
+          >
+            {showLogs ? "Hide Logs" : `View Logs (${logLines.length} lines)`}
+          </button>
+          {showLogs && (
+            <div className="mt-1 max-h-48 overflow-y-auto bg-gray-900 text-green-400 text-xs font-mono p-2 rounded">
+              {logLines.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap">{line}</div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="mt-3 flex gap-2">

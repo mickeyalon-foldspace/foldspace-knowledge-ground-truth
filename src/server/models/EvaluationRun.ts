@@ -29,6 +29,7 @@ export interface IEvaluationRun extends Document {
   startedAt?: Date;
   completedAt?: Date;
   error?: string;
+  playwrightLog?: string[];
   summary?: IRunSummary;
   createdAt: Date;
   updatedAt: Date;
@@ -73,6 +74,7 @@ const evaluationRunSchema = new Schema<IEvaluationRun>(
     startedAt: { type: Date },
     completedAt: { type: Date },
     error: { type: String },
+    playwrightLog: { type: [String], default: [] },
     summary: { type: runSummarySchema },
   },
   { timestamps: true }

@@ -1,6 +1,12 @@
 import { chromium, Browser, Page, BrowserContext } from "playwright";
+import path from "path";
+import fs from "fs";
 import { config } from "../config.js";
 import { ISearchKnowledge } from "../models/EvaluationResult.js";
+
+const SCREENSHOTS_DIR = path.resolve("screenshots");
+if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+
 
 export interface AgentCredentials {
   url: string;
@@ -26,13 +32,44 @@ export class PlaywrightEngine {
   private isLoggedIn = false;
   private onStage: StageCallback = () => {};
   private credentials: AgentCredentials | null = null;
+  private _logs: string[] = [];
+  private onLog: ((line: string) => void) | null = null;
 
   setStageCallback(cb: StageCallback) {
     this.onStage = cb;
   }
 
+  setLogCallback(cb: (line: string) => void) {
+    this.onLog = cb;
+  }
+
+  private appendLog(msg: string) {
+    const entry = `[${new Date().toISOString()}] ${msg}`;
+    this._logs.push(entry);
+    if (this._logs.length > 200) this._logs.shift();
+    console.log(`[Playwright] ${msg}`);
+    if (this.onLog) this.onLog(entry);
+  }
+
+  getLogs(): string[] {
+    return [...this._logs];
+  }
+
+  clearLogs(): void {
+    this._logs = [];
+  }
+
+  private async screenshot(name: string): Promise<string> {
+    if (!this.page) return "";
+    const file = path.join(SCREENSHOTS_DIR, `${name}-${Date.now()}.png`);
+    await this.page.screenshot({ path: file, fullPage: true }).catch(() => {});
+    this.appendLog(`Screenshot saved: ${file}`);
+    return file;
+  }
+
   async initialize(): Promise<void> {
     this.onStage("launching_browser");
+    this.appendLog("Launching browser...");
     this.browser = await chromium.launch({
       headless: true,
       args: [
@@ -61,6 +98,7 @@ export class PlaywrightEngine {
     });
     this.page = await this.context.newPage();
     this.page.setDefaultTimeout(90000);
+    this.appendLog("Browser ready");
   }
 
   async login(creds?: AgentCredentials): Promise<void> {
@@ -79,10 +117,13 @@ export class PlaywrightEngine {
       throw new Error("Agent username and password are required");
     }
 
+    this.appendLog(`Navigating to ${url}...`);
     await this.page.goto(url, { waitUntil: "networkidle", timeout: 90000 });
+    this.appendLog(`Page loaded: ${this.page.url()}`);
 
     await this.page.locator('input[name="email"]').fill(username);
     await this.page.locator('input[name="password"]').fill(password);
+    this.appendLog("Credentials filled, submitting...");
 
     await Promise.all([
       this.page
@@ -102,13 +143,14 @@ export class PlaywrightEngine {
       .isVisible()
       .catch(() => false);
     if (onLoginPage) {
-      throw new Error(
-        `Login failed — still on login page (${currentUrl}). Check credentials.`
-      );
+      await this.screenshot("login-failed");
+      const msg = `Login failed — still on login page (${currentUrl}). Check credentials.`;
+      this.appendLog(msg);
+      throw new Error(msg);
     }
 
     this.isLoggedIn = true;
-    console.log(`Logged in to ${url}`);
+    this.appendLog(`Login successful — now at ${this.page.url()}`);
   }
 
   async navigateToPlayground(): Promise<void> {
@@ -116,12 +158,18 @@ export class PlaywrightEngine {
     if (!this.isLoggedIn) await this.login();
     this.onStage("navigating_to_playground");
 
-    // Click the sidebar "PSR Copilot" button
-    await this.page.locator('button[aria-label="PSR Copilot"]').click();
+    this.appendLog(`Looking for PSR Copilot button on ${this.page.url()}...`);
+    const btn = this.page.locator('button[aria-label="PSR Copilot"]');
+    const visible = await btn.isVisible().catch(() => false);
+    if (!visible) {
+      await this.screenshot("copilot-button-not-found");
+      this.appendLog("PSR Copilot button not visible — screenshot saved");
+    }
+    await btn.click();
     await this.page.waitForLoadState("networkidle").catch(() => {});
     await this.page.waitForTimeout(2000);
 
-    console.log("Navigated to playground:", this.page.url());
+    this.appendLog(`Navigated to playground: ${this.page.url()}`);
   }
 
   async askQuestion(question: string): Promise<PlaywrightResult> {
@@ -150,21 +198,33 @@ export class PlaywrightEngine {
 
     // Start new chat — this gives us the chatId
     this.onStage("new_chat");
+    this.appendLog(`askQuestion: "${question.substring(0, 80)}..." on page ${this.page.url()}`);
     const newChatBtn = this.page.locator('button[aria-label="New Chat"]');
     if (await newChatBtn.isVisible().catch(() => false)) {
+      this.appendLog("Clicking New Chat button");
       await newChatBtn.click();
       await this.page.waitForTimeout(1500);
+    } else {
+      this.appendLog("New Chat button not visible, skipping");
     }
 
     // Type the question
     this.onStage("typing_question");
+    this.appendLog("Looking for textarea...");
     const textarea = this.page.locator("textarea.MuiInputBase-input").first();
+    const textareaVisible = await textarea.isVisible().catch(() => false);
+    if (!textareaVisible) {
+      await this.screenshot("textarea-not-found");
+      this.appendLog("Textarea NOT visible — screenshot saved");
+    }
     await textarea.waitFor({ state: "visible", timeout: 60000 });
+    this.appendLog("Textarea found, filling question");
     await textarea.fill(question);
     await this.page.waitForTimeout(300);
 
     // Submit
     this.onStage("waiting_for_response");
+    this.appendLog("Pressing Enter to submit question");
     const startTime = Date.now();
     await textarea.press("Enter");
 
@@ -174,6 +234,7 @@ export class PlaywrightEngine {
     let lastTextLen = 0;
     let stableCount = 0;
 
+    this.appendLog("Waiting for response (up to 90 polls x 2s = 180s)...");
     for (let attempt = 0; attempt < 90; attempt++) {
       await this.page.waitForTimeout(2000);
 
@@ -222,6 +283,10 @@ export class PlaywrightEngine {
       }
       lastTextLen = result.text.length;
 
+      if (attempt % 10 === 9) {
+        this.appendLog(`Poll ${attempt + 1}/90: thinking=${result.thinking}, textLen=${result.text.length}, stable=${stableCount}, hasAnalysis=${result.hasAnalysis}`);
+      }
+
       if (result.hasAnalysis || stableCount >= 3) {
         const lines = result.text.split("\n");
         const questionLine = lines.findIndex((l) =>
@@ -232,6 +297,7 @@ export class PlaywrightEngine {
         } else {
           responseText = result.text;
         }
+        this.appendLog(`Response captured after ${attempt + 1} polls (${((Date.now() - startTime) / 1000).toFixed(1)}s), ${responseText.length} chars`);
         break;
       }
     }
@@ -241,13 +307,13 @@ export class PlaywrightEngine {
     this.page.removeListener("response", responseHandler);
 
     if (!responseText) {
+      await this.screenshot("response-timeout");
+      this.appendLog(`TIMEOUT: no response after ${(responseTimeMs / 1000).toFixed(1)}s — screenshot saved`);
       responseText = "Unable to extract response after timeout";
     }
 
-    // Fetch analysis via direct API calls:
-    // 1. GET /admin/ai/chats/{chatId} → messages[] → find assistant messageId
-    // 2. POST /agent/playground/message { chatId, messageId } → functions[].result.data[]
     this.onStage("fetching_analysis");
+    this.appendLog(`chatId captured: ${chatId || "NONE"}`);
     let searchKnowledge: ISearchKnowledge = { queries: [], chunks: [] };
     const rawApiResponses: unknown[] = [];
 
@@ -276,17 +342,17 @@ export class PlaywrightEngine {
           rawApiResponses.push({ type: "analysis", data: analysisData });
           searchKnowledge =
             this.extractSearchKnowledge(analysisData);
-          console.log(
+          this.appendLog(
             `Fetched analysis: ${searchKnowledge.chunks.length} chunks, ${searchKnowledge.queries.length} queries (chatId=${chatId}, messageId=${messageId})`
           );
         } else {
-          console.warn("No assistant message ID found in chat data");
+          this.appendLog("WARNING: No assistant message ID found in chat data");
         }
       } catch (err) {
-        console.error("Analysis API call failed:", err);
+        this.appendLog(`Analysis API call failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     } else {
-      console.warn("Could not capture chatId from new-chat response");
+      this.appendLog("WARNING: Could not capture chatId from new-chat response");
     }
 
     return {

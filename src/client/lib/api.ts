@@ -331,6 +331,7 @@ export interface EvaluationRunData {
   startedAt?: string;
   completedAt?: string;
   error?: string;
+  playwrightLog?: string[];
   summary?: RunSummary;
   createdAt: string;
 }
@@ -401,6 +402,7 @@ export interface RunProgress {
   totalQuestions?: number;
   currentEntry?: string;
   error?: string;
+  logLine?: string;
 }
 
 export interface LanguageStat {
