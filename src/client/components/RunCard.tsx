@@ -9,7 +9,7 @@ interface RunCardProps {
   totalQuestions?: number;
   currentEntry?: string;
   onView: (runId: string) => void;
-  onDelete: (runId: string) => void;
+  onDelete?: (runId: string) => void;
   onCancel?: (runId: string) => void;
 }
 
@@ -166,12 +166,14 @@ export default function RunCard({
             Cancel
           </button>
         )}
+        {onDelete && (
         <button
           onClick={() => onDelete(run._id)}
           className="text-xs text-red-600 border border-red-200 rounded px-3 py-1.5 hover:bg-red-50 transition-colors"
         >
           Delete
         </button>
+        )}
       </div>
     </div>
   );

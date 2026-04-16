@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuth } from "@/components/AuthProvider";
 import FileUpload from "@/components/FileUpload";
 import {
   getGoldenSets,
@@ -14,6 +16,8 @@ import type { GoldenSetSummary, GoldenSetFull, GoldenSetEntry } from "@/lib/api"
 import { isRtlLanguage } from "@/lib/rtl";
 
 export default function GoldenSetsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [sets, setSets] = useState<GoldenSetSummary[]>([]);
   const [selectedSet, setSelectedSet] = useState<GoldenSetFull | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -131,6 +135,7 @@ export default function GoldenSetsPage() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -162,6 +167,7 @@ export default function GoldenSetsPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Upload panel */}
+          {isAdmin && (
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg border p-4">
               <h2 className="text-sm font-semibold text-gray-700 mb-3">
@@ -170,9 +176,10 @@ export default function GoldenSetsPage() {
               <FileUpload onUpload={handleUpload} isUploading={isUploading} />
             </div>
           </div>
+          )}
 
           {/* List */}
-          <div className="lg:col-span-2">
+          <div className={isAdmin ? "lg:col-span-2" : "lg:col-span-3"}>
             {loading ? (
               <div className="text-center py-8 text-gray-500">Loading...</div>
             ) : sets.length === 0 ? (
@@ -213,12 +220,14 @@ export default function GoldenSetsPage() {
                       >
                         Preview
                       </button>
+                      {isAdmin && (
                       <button
                         onClick={() => handleDelete(set._id)}
                         className="text-xs text-red-600 border border-red-200 rounded px-3 py-1.5 hover:bg-red-50 transition-colors"
                       >
                         Delete
                       </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -420,5 +429,6 @@ export default function GoldenSetsPage() {
         )}
       </main>
     </div>
+    </ProtectedRoute>
   );
 }

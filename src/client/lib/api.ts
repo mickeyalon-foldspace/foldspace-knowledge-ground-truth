@@ -1,19 +1,83 @@
+import { auth } from "./firebase";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
+      ...authHeaders,
       ...options?.headers,
     },
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = "/login";
+      throw new Error("Session expired");
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Request failed: ${res.status}`);
   }
 
   return res.json();
+}
+
+// Auth
+export async function authSignup(orgName: string) {
+  return request<{ user: AppUserData; organization: OrgData }>("/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orgName }),
+  });
+}
+
+export async function authJoin(inviteId: string) {
+  return request<{ user: AppUserData; organization: OrgData }>("/auth/join", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ inviteId }),
+  });
+}
+
+export async function getUsers() {
+  return request<UserListItem[]>("/users");
+}
+
+export async function updateUserRole(userId: string, role: string) {
+  return request<UserListItem>(`/users/${userId}/role`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removeUser(userId: string) {
+  return request<{ message: string }>(`/users/${userId}`, { method: "DELETE" });
+}
+
+export async function getInvites() {
+  return request<InviteData[]>("/invites");
+}
+
+export async function createInvite(email: string, role: string) {
+  return request<InviteData>("/invites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+export async function revokeInvite(id: string) {
+  return request<{ message: string }>(`/invites/${id}`, { method: "DELETE" });
 }
 
 // Golden Sets
@@ -164,6 +228,37 @@ export function subscribeToRunProgress(
 }
 
 // Types
+export interface AppUserData {
+  _id: string;
+  firebaseUid: string;
+  email: string;
+  displayName: string;
+  orgId: string;
+  role: "admin" | "viewer";
+}
+
+export interface OrgData {
+  _id: string;
+  name: string;
+}
+
+export interface UserListItem {
+  _id: string;
+  email: string;
+  displayName: string;
+  role: "admin" | "viewer";
+  createdAt: string;
+}
+
+export interface InviteData {
+  _id: string;
+  email: string;
+  orgId: string;
+  role: "admin" | "viewer";
+  status: "pending" | "accepted" | "expired";
+  createdAt: string;
+}
+
 export interface AgentData {
   _id: string;
   name: string;

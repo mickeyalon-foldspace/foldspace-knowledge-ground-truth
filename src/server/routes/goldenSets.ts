@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { GoldenSet } from "../models/GoldenSet.js";
 import { parseFile, detectFormat } from "../services/ingestion.js";
+import { requireRole } from "../middleware/auth.js";
 
 const router = Router();
 const upload = multer({
@@ -14,10 +15,9 @@ function paramId(req: Request): string {
   return Array.isArray(id) ? id[0] : id;
 }
 
-// List all golden sets
-router.get("/", async (_req: Request, res: Response) => {
+router.get("/", async (req: Request, res: Response) => {
   try {
-    const sets = await GoldenSet.find()
+    const sets = await GoldenSet.find({ orgId: req.user!.orgId })
       .select("-entries")
       .sort({ createdAt: -1 });
 
@@ -40,10 +40,12 @@ router.get("/", async (_req: Request, res: Response) => {
   }
 });
 
-// Get a single golden set with entries
 router.get("/:id", async (req: Request, res: Response) => {
   try {
-    const set = await GoldenSet.findById(paramId(req));
+    const set = await GoldenSet.findOne({
+      _id: paramId(req),
+      orgId: req.user!.orgId,
+    });
     if (!set) {
       res.status(404).json({ error: "Golden set not found" });
       return;
@@ -54,9 +56,9 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Preview file — parse and return entries without saving
 router.post(
   "/preview",
+  requireRole("admin"),
   upload.single("file"),
   async (req: Request, res: Response) => {
     try {
@@ -86,41 +88,56 @@ router.post(
   }
 );
 
-// Save a golden set from pre-parsed entries (after preview selection)
-router.post("/save", async (req: Request, res: Response) => {
-  try {
-    const { name, description, entries, sourceFormat } = req.body;
-    if (!name || !entries || !Array.isArray(entries) || entries.length === 0) {
-      res.status(400).json({ error: "name and non-empty entries array are required" });
-      return;
+router.post(
+  "/save",
+  requireRole("admin"),
+  async (req: Request, res: Response) => {
+    try {
+      const { name, description, entries, sourceFormat } = req.body;
+      if (
+        !name ||
+        !entries ||
+        !Array.isArray(entries) ||
+        entries.length === 0
+      ) {
+        res
+          .status(400)
+          .json({ error: "name and non-empty entries array are required" });
+        return;
+      }
+
+      const goldenSet = await GoldenSet.create({
+        orgId: req.user!.orgId,
+        name,
+        description,
+        entries,
+        sourceFormat: sourceFormat || "json",
+      });
+
+      const languages = [
+        ...new Set(
+          entries.map((e: { language: string }) => e.language)
+        ),
+      ];
+
+      res.status(201).json({
+        id: goldenSet._id,
+        name: goldenSet.name,
+        entryCount: goldenSet.entries.length,
+        sourceFormat: goldenSet.sourceFormat,
+        languages,
+        createdAt: goldenSet.createdAt,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Save failed";
+      res.status(400).json({ error: message });
     }
-
-    const goldenSet = await GoldenSet.create({
-      name,
-      description,
-      entries,
-      sourceFormat: sourceFormat || "json",
-    });
-
-    const languages = [...new Set(entries.map((e: { language: string }) => e.language))];
-
-    res.status(201).json({
-      id: goldenSet._id,
-      name: goldenSet.name,
-      entryCount: goldenSet.entries.length,
-      sourceFormat: goldenSet.sourceFormat,
-      languages,
-      createdAt: goldenSet.createdAt,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Save failed";
-    res.status(400).json({ error: message });
   }
-});
+);
 
-// Upload and create a new golden set (legacy one-step)
 router.post(
   "/upload",
+  requireRole("admin"),
   upload.single("file"),
   async (req: Request, res: Response) => {
     try {
@@ -146,6 +163,7 @@ router.post(
       const description = req.body.description as string | undefined;
 
       const goldenSet = await GoldenSet.create({
+        orgId: req.user!.orgId,
         name,
         description,
         entries,
@@ -170,18 +188,24 @@ router.post(
   }
 );
 
-// Delete a golden set
-router.delete("/:id", async (req: Request, res: Response) => {
-  try {
-    const result = await GoldenSet.findByIdAndDelete(paramId(req));
-    if (!result) {
-      res.status(404).json({ error: "Golden set not found" });
-      return;
+router.delete(
+  "/:id",
+  requireRole("admin"),
+  async (req: Request, res: Response) => {
+    try {
+      const result = await GoldenSet.findOneAndDelete({
+        _id: paramId(req),
+        orgId: req.user!.orgId,
+      });
+      if (!result) {
+        res.status(404).json({ error: "Golden set not found" });
+        return;
+      }
+      res.json({ message: "Golden set deleted" });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete golden set" });
     }
-    res.json({ message: "Golden set deleted" });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete golden set" });
   }
-});
+);
 
 export default router;

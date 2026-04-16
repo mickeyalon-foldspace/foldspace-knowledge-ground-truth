@@ -32,6 +32,7 @@ export interface IRetrievedArticle {
 }
 
 export interface IEvaluationResult extends Document {
+  orgId: Types.ObjectId;
   runId: Types.ObjectId;
   entryIndex: number;
   question: string;
@@ -105,6 +106,7 @@ const judgeScoresSchema = new Schema<IJudgeScores>(
 
 const evaluationResultSchema = new Schema<IEvaluationResult>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
     runId: {
       type: Schema.Types.ObjectId,
       ref: "EvaluationRun",

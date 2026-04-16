@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { EvaluationResult } from "../models/EvaluationResult.js";
+import mongoose from "mongoose";
 
 const router = Router();
 
@@ -8,13 +9,15 @@ function paramValue(req: Request, key: string): string {
   return Array.isArray(val) ? val[0] : val;
 }
 
-// Get all results for a run
 router.get("/run/:runId", async (req: Request, res: Response) => {
   try {
     const runId = paramValue(req, "runId");
     const { language, category, minScore, maxScore } = req.query;
 
-    const filter: Record<string, unknown> = { runId };
+    const filter: Record<string, unknown> = {
+      runId,
+      orgId: req.user!.orgId,
+    };
 
     if (language) {
       filter.language = language;
@@ -44,10 +47,12 @@ router.get("/run/:runId", async (req: Request, res: Response) => {
   }
 });
 
-// Get a single result with full details (including raw API responses)
 router.get("/:id", async (req: Request, res: Response) => {
   try {
-    const result = await EvaluationResult.findById(paramValue(req, "id"));
+    const result = await EvaluationResult.findOne({
+      _id: paramValue(req, "id"),
+      orgId: req.user!.orgId,
+    });
     if (!result) {
       res.status(404).json({ error: "Result not found" });
       return;
@@ -58,12 +63,17 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
-// Get aggregate stats for a run grouped by language
 router.get("/run/:runId/stats", async (req: Request, res: Response) => {
   try {
     const runId = paramValue(req, "runId");
+    const orgId = req.user!.orgId;
     const stats = await EvaluationResult.aggregate([
-      { $match: { runId } },
+      {
+        $match: {
+          runId: new mongoose.Types.ObjectId(runId),
+          orgId: new mongoose.Types.ObjectId(orgId.toString()),
+        },
+      },
       {
         $group: {
           _id: "$language",

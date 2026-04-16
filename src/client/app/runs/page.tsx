@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuth } from "@/components/AuthProvider";
 import RunCard from "@/components/RunCard";
 import {
   getRuns,
@@ -40,6 +42,8 @@ interface LiveRunState {
 }
 
 export default function RunsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const router = useRouter();
   const [runs, setRuns] = useState<EvaluationRunData[]>([]);
   const [agents, setAgents] = useState<AgentData[]>([]);
@@ -267,6 +271,7 @@ export default function RunsPage() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -287,6 +292,7 @@ export default function RunsPage() {
         )}
 
         {/* New Run form */}
+        {isAdmin && (
         <div className="bg-white rounded-lg border p-4 mb-6">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">
             Start New Run
@@ -482,6 +488,7 @@ export default function RunsPage() {
             </div>
           )}
         </div>
+        )}
 
         {/* Tabs */}
         <div className="flex border-b border-gray-200 mb-4">
@@ -537,8 +544,8 @@ export default function RunsPage() {
                   totalQuestions={live.totalQuestions}
                   currentEntry={live.currentEntry}
                   onView={(id) => router.push(`/runs/${id}`)}
-                  onDelete={handleDelete}
-                  onCancel={handleCancel}
+                  onDelete={isAdmin ? handleDelete : undefined}
+                  onCancel={isAdmin ? handleCancel : undefined}
                 />
               );
             })}
@@ -546,5 +553,6 @@ export default function RunsPage() {
         )}
       </main>
     </div>
+    </ProtectedRoute>
   );
 }

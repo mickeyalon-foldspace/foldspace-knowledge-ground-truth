@@ -1,6 +1,7 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface IAgent extends Document {
+  orgId: Types.ObjectId;
   name: string;
   url: string;
   apiBaseUrl: string;
@@ -12,6 +13,7 @@ export interface IAgent extends Document {
 
 const agentSchema = new Schema<IAgent>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
     name: { type: String, required: true },
     url: { type: String, required: true },
     apiBaseUrl: { type: String, required: true },

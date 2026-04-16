@@ -41,6 +41,7 @@ export class EvaluationRunner {
   async startRun(
     goldenSetId: string,
     agentId: string,
+    orgId: string,
     judgeModel?: string,
     entryIndices?: number[]
   ): Promise<IEvaluationRun> {
@@ -89,6 +90,7 @@ export class EvaluationRunner {
     await testEngine.close();
 
     const run = await EvaluationRun.create({
+      orgId: new Types.ObjectId(orgId),
       goldenSetId: new Types.ObjectId(goldenSetId),
       goldenSetName: goldenSet.name,
       agentId: new Types.ObjectId(agentId),
@@ -98,7 +100,7 @@ export class EvaluationRunner {
       judgeModel: this.judgeService.getModel(),
     });
 
-    this.executeRun(run._id!.toString(), entries, agentCreds).catch((err) => {
+    this.executeRun(run._id!.toString(), entries, agentCreds, orgId).catch((err) => {
       console.error(`Run ${run._id} failed:`, err);
     });
 
@@ -126,7 +128,8 @@ export class EvaluationRunner {
   private async executeRun(
     runId: string,
     entries: IGoldenSetEntry[],
-    agentCreds: AgentCredentials
+    agentCreds: AgentCredentials,
+    orgId: string
   ): Promise<void> {
     const controller = new AbortController();
     this.abortControllers.set(runId, controller);
@@ -204,6 +207,7 @@ export class EvaluationRunner {
           });
 
           const result = await EvaluationResult.create({
+            orgId: new Types.ObjectId(orgId),
             runId: new Types.ObjectId(runId),
             entryIndex: i,
             question: entry.question,
@@ -251,6 +255,7 @@ export class EvaluationRunner {
           });
 
           await EvaluationResult.create({
+            orgId: new Types.ObjectId(orgId),
             runId: new Types.ObjectId(runId),
             entryIndex: i,
             question: entry.question,

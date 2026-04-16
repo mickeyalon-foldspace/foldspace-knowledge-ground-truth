@@ -16,6 +16,11 @@ export const config = {
     apiKey: process.env.ANTHROPIC_API_KEY || "",
     judgeModel: process.env.JUDGE_MODEL || "claude-sonnet-4-20250514",
   },
+  firebase: {
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
+    privateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+  },
   server: {
     port: parseInt(process.env.PORT || "3001", 10),
   },

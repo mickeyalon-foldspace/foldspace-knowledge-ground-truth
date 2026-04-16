@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document, Types } from "mongoose";
 
 export interface IGoldenSetEntry {
   question: string;
@@ -10,6 +10,7 @@ export interface IGoldenSetEntry {
 }
 
 export interface IGoldenSet extends Document {
+  orgId: Types.ObjectId;
   name: string;
   description?: string;
   entries: IGoldenSetEntry[];
@@ -32,6 +33,7 @@ const goldenSetEntrySchema = new Schema<IGoldenSetEntry>(
 
 const goldenSetSchema = new Schema<IGoldenSet>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
     name: { type: String, required: true },
     description: { type: String },
     entries: { type: [goldenSetEntrySchema], required: true },

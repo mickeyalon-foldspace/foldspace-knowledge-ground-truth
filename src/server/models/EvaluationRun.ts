@@ -18,6 +18,7 @@ export interface IRunSummary {
 }
 
 export interface IEvaluationRun extends Document {
+  orgId: Types.ObjectId;
   goldenSetId: Types.ObjectId;
   goldenSetName: string;
   agentId: Types.ObjectId;
@@ -49,6 +50,7 @@ const runSummarySchema = new Schema<IRunSummary>(
 
 const evaluationRunSchema = new Schema<IEvaluationRun>(
   {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
     goldenSetId: {
       type: Schema.Types.ObjectId,
       ref: "GoldenSet",

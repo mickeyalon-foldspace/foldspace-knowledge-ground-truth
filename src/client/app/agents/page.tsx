@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { useAuth } from "@/components/AuthProvider";
 import {
   getAgents,
   createAgent,
@@ -20,6 +22,8 @@ const EMPTY_FORM: AgentFormData = {
 };
 
 export default function AgentsPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [agents, setAgents] = useState<AgentData[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<AgentFormData>(EMPTY_FORM);
@@ -121,12 +125,13 @@ export default function AgentsPage() {
   };
 
   return (
+    <ProtectedRoute>
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Agents</h1>
-          {!showForm && (
+          {!showForm && isAdmin && (
             <button
               onClick={() => {
                 setForm(EMPTY_FORM);
@@ -275,6 +280,7 @@ export default function AgentsPage() {
                       </p>
                     </div>
                   </div>
+                  {isAdmin && (
                   <div className="flex gap-2 ml-4 shrink-0">
                     <button
                       onClick={() => handleTestAuth(agent._id)}
@@ -296,6 +302,7 @@ export default function AgentsPage() {
                       Delete
                     </button>
                   </div>
+                  )}
                 </div>
                 {testResult && testResult.id === agent._id && (
                   <div
@@ -314,5 +321,6 @@ export default function AgentsPage() {
         )}
       </main>
     </div>
+    </ProtectedRoute>
   );
 }
