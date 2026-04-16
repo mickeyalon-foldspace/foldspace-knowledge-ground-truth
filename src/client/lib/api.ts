@@ -1,6 +1,13 @@
 import { auth } from "./firebase";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+function getApiBase() {
+  if (typeof window === "undefined") return "http://localhost:3001/api";
+  return window.location.hostname === "localhost"
+    ? "http://localhost:3001/api"
+    : `${window.location.origin}/api`;
+}
+
+const API_BASE = getApiBase();
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser;
