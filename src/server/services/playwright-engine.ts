@@ -97,7 +97,7 @@ export class PlaywrightEngine {
       ignoreHTTPSErrors: true,
     });
     this.page = await this.context.newPage();
-    this.page.setDefaultTimeout(90000);
+    this.page.setDefaultTimeout(10000);
     this.appendLog("Browser ready");
   }
 
@@ -118,7 +118,8 @@ export class PlaywrightEngine {
     }
 
     this.appendLog(`Navigating to ${url}...`);
-    await this.page.goto(url, { waitUntil: "networkidle", timeout: 90000 });
+    await this.page.goto(url, { waitUntil: "domcontentloaded", timeout: 10000 });
+    await this.page.waitForTimeout(2000);
     this.appendLog(`Page loaded: ${this.page.url()}`);
 
     await this.page.locator('input[name="email"]').fill(username);
@@ -127,14 +128,13 @@ export class PlaywrightEngine {
 
     await Promise.all([
       this.page
-        .waitForNavigation({ timeout: 90000 })
+        .waitForNavigation({ timeout: 10000 })
         .catch(() =>
-          this.page!.waitForLoadState("networkidle", { timeout: 90000 })
+          this.page!.waitForLoadState("domcontentloaded", { timeout: 10000 })
         ),
       this.page.locator('button[type="submit"]').click(),
     ]);
-    await this.page.waitForLoadState("networkidle").catch(() => {});
-    await this.page.waitForTimeout(2000);
+    await this.page.waitForTimeout(3000);
 
     // Verify login succeeded by checking we're no longer on the login page
     const currentUrl = this.page.url();
@@ -158,33 +158,27 @@ export class PlaywrightEngine {
     if (!this.isLoggedIn) await this.login();
     this.onStage("navigating_to_playground");
 
-    // Navigate to the playground page (apiBaseUrl holds the playground URL)
     const playgroundUrl = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
     this.appendLog(`Navigating to playground: ${playgroundUrl}`);
-    await this.page.goto(playgroundUrl, { waitUntil: "networkidle", timeout: 90000 });
-
-    // Wait for the page to fully render
-    await this.page.waitForLoadState("domcontentloaded");
-    await this.page.waitForTimeout(5000);
-    this.appendLog(`Page ready: ${this.page.url()}`);
-
-    // Wait for the Copilot button to appear (up to 30s)
-    this.appendLog("Waiting for PSR Copilot button...");
-    const btn = this.page.locator('button[aria-label="PSR Copilot"]');
     try {
-      await btn.waitFor({ state: "visible", timeout: 30000 });
-      this.appendLog("PSR Copilot button found");
+      await this.page.goto(playgroundUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
     } catch {
-      await this.screenshot("copilot-button-not-found");
-      this.appendLog(`PSR Copilot button not visible after 30s on ${this.page.url()} — screenshot saved`);
-      throw new Error(`PSR Copilot button not found on ${this.page.url()}`);
+      this.appendLog(`goto domcontentloaded timed out, continuing anyway at ${this.page.url()}`);
     }
+    await this.page.waitForTimeout(3000);
+    this.appendLog(`Playground page loaded: ${this.page.url()}`);
 
-    await btn.click();
-    await this.page.waitForLoadState("networkidle").catch(() => {});
-    await this.page.waitForTimeout(2000);
-
-    this.appendLog(`Playground ready: ${this.page.url()}`);
+    // The playground URL IS the copilot — wait for the textarea to confirm it's ready
+    this.appendLog("Waiting for textarea to confirm playground is ready...");
+    const textarea = this.page.locator("textarea").first();
+    try {
+      await textarea.waitFor({ state: "visible", timeout: 10000 });
+      this.appendLog("Textarea found — playground is ready");
+    } catch {
+      await this.screenshot("playground-not-ready");
+      this.appendLog(`Textarea not found on ${this.page.url()} — screenshot saved`);
+      throw new Error(`Playground not ready — textarea not found on ${this.page.url()}`);
+    }
   }
 
   async askQuestion(question: string): Promise<PlaywrightResult> {
@@ -218,7 +212,7 @@ export class PlaywrightEngine {
     if (await newChatBtn.isVisible().catch(() => false)) {
       this.appendLog("Clicking New Chat button");
       await newChatBtn.click();
-      await this.page.waitForTimeout(1500);
+      await this.page.waitForTimeout(1000);
     } else {
       this.appendLog("New Chat button not visible, skipping");
     }
@@ -226,13 +220,14 @@ export class PlaywrightEngine {
     // Type the question
     this.onStage("typing_question");
     this.appendLog("Looking for textarea...");
-    const textarea = this.page.locator("textarea.MuiInputBase-input").first();
-    const textareaVisible = await textarea.isVisible().catch(() => false);
-    if (!textareaVisible) {
+    const textarea = this.page.locator("textarea").first();
+    try {
+      await textarea.waitFor({ state: "visible", timeout: 10000 });
+    } catch {
       await this.screenshot("textarea-not-found");
       this.appendLog("Textarea NOT visible — screenshot saved");
+      throw new Error("Textarea not found on page");
     }
-    await textarea.waitFor({ state: "visible", timeout: 60000 });
     this.appendLog("Textarea found, filling question");
     await textarea.fill(question);
     await this.page.waitForTimeout(300);
