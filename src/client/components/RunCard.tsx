@@ -198,6 +198,9 @@ export default function RunCard({
               )}
               {run.agentName && " · "}
               Model: {run.judgeModel} ·{" "}
+              {run.summary
+                ? `${run.summary.completedQuestions}/${run.summary.totalQuestions} evals · `
+                : ""}
               {new Date(run.createdAt).toLocaleString()}
             </p>
           </div>

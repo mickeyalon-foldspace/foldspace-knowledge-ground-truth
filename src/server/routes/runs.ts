@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+import mongoose from "mongoose";
 import { EvaluationRun } from "../models/EvaluationRun.js";
+import { EvaluationResult } from "../models/EvaluationResult.js";
 import { evaluationRunner, runnerEvents } from "../services/runner.js";
 import { requireRole } from "../middleware/auth.js";
 
@@ -8,6 +10,10 @@ const router = Router();
 function paramId(req: Request): string {
   const id = req.params.id;
   return Array.isArray(id) ? id[0] : id;
+}
+
+function isValidObjectId(id: string): boolean {
+  return mongoose.Types.ObjectId.isValid(id);
 }
 
 router.get("/", async (req: Request, res: Response) => {
@@ -28,16 +34,35 @@ router.post(
     try {
       const { ids } = req.body as { ids: string[] };
       if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        res.status(400).json({ error: "ids array required" });
+        res.status(400).json({ error: "ids array is required" });
         return;
       }
-      const { EvaluationResult } = await import("../models/EvaluationResult.js");
-      await EvaluationResult.deleteMany({ runId: { $in: ids }, orgId: req.user!.orgId });
-      await EvaluationRun.deleteMany({ _id: { $in: ids }, orgId: req.user!.orgId });
-      res.json({ message: `${ids.length} runs deleted` });
+
+      const validIds = ids.filter(isValidObjectId);
+      if (validIds.length === 0) {
+        res.status(400).json({ error: "No valid IDs provided" });
+        return;
+      }
+
+      const orgId = req.user!.orgId;
+      const objectIds = validIds.map((id) => new mongoose.Types.ObjectId(id));
+
+      const resultDel = await EvaluationResult.deleteMany({
+        runId: { $in: objectIds },
+        orgId,
+      });
+      const runDel = await EvaluationRun.deleteMany({
+        _id: { $in: objectIds },
+        orgId,
+      });
+
+      res.json({
+        message: `Deleted ${runDel.deletedCount} runs and ${resultDel.deletedCount} results`,
+      });
     } catch (error) {
-      console.error("Bulk delete error:", error);
-      res.status(500).json({ error: "Failed to bulk delete runs" });
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Bulk delete error:", msg, error);
+      res.status(500).json({ error: `Bulk delete failed: ${msg}` });
     }
   }
 );
@@ -136,17 +161,35 @@ router.delete(
   async (req: Request, res: Response) => {
     try {
       const id = paramId(req);
-      const { EvaluationResult } = await import(
-        "../models/EvaluationResult.js"
-      );
-      await EvaluationResult.deleteMany({ runId: id, orgId: req.user!.orgId });
-      await EvaluationRun.findOneAndDelete({
-        _id: id,
-        orgId: req.user!.orgId,
+      if (!isValidObjectId(id)) {
+        res.status(400).json({ error: `Invalid run ID: ${id}` });
+        return;
+      }
+
+      const orgId = req.user!.orgId;
+      const objectId = new mongoose.Types.ObjectId(id);
+
+      const resultDel = await EvaluationResult.deleteMany({
+        runId: objectId,
+        orgId,
       });
-      res.json({ message: "Run and results deleted" });
+      const runDel = await EvaluationRun.findOneAndDelete({
+        _id: objectId,
+        orgId,
+      });
+
+      if (!runDel) {
+        res.status(404).json({ error: "Run not found or not in your org" });
+        return;
+      }
+
+      res.json({
+        message: `Deleted run and ${resultDel.deletedCount} results`,
+      });
     } catch (error) {
-      res.status(500).json({ error: "Failed to delete run" });
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Delete run error:", msg, error);
+      res.status(500).json({ error: `Delete failed: ${msg}` });
     }
   }
 );
