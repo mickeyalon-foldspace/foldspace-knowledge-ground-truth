@@ -60,6 +60,7 @@ export class PlaywrightEngine {
       ignoreHTTPSErrors: true,
     });
     this.page = await this.context.newPage();
+    this.page.setDefaultTimeout(90000);
   }
 
   async login(creds?: AgentCredentials): Promise<void> {
@@ -78,16 +79,16 @@ export class PlaywrightEngine {
       throw new Error("Agent username and password are required");
     }
 
-    await this.page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+    await this.page.goto(url, { waitUntil: "networkidle", timeout: 90000 });
 
     await this.page.locator('input[name="email"]').fill(username);
     await this.page.locator('input[name="password"]').fill(password);
 
     await Promise.all([
       this.page
-        .waitForNavigation({ timeout: 30000 })
+        .waitForNavigation({ timeout: 90000 })
         .catch(() =>
-          this.page!.waitForLoadState("networkidle", { timeout: 30000 })
+          this.page!.waitForLoadState("networkidle", { timeout: 90000 })
         ),
       this.page.locator('button[type="submit"]').click(),
     ]);
@@ -158,7 +159,7 @@ export class PlaywrightEngine {
     // Type the question
     this.onStage("typing_question");
     const textarea = this.page.locator("textarea.MuiInputBase-input").first();
-    await textarea.waitFor({ state: "visible", timeout: 15000 });
+    await textarea.waitFor({ state: "visible", timeout: 60000 });
     await textarea.fill(question);
     await this.page.waitForTimeout(300);
 
@@ -173,7 +174,7 @@ export class PlaywrightEngine {
     let lastTextLen = 0;
     let stableCount = 0;
 
-    for (let attempt = 0; attempt < 60; attempt++) {
+    for (let attempt = 0; attempt < 90; attempt++) {
       await this.page.waitForTimeout(2000);
 
       const result = await this.page.evaluate(() => {
