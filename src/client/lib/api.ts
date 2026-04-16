@@ -214,20 +214,31 @@ export async function getResultDetail(id: string) {
   return request<EvaluationResultData>(`/results/${id}`);
 }
 
-// SSE for run progress
+// SSE for run progress — EventSource can't set headers, so pass token as query param
 export function subscribeToRunProgress(
   runId: string,
   onProgress: (data: RunProgress) => void
 ): () => void {
-  const es = new EventSource(`${API_BASE}/runs/${runId}/progress`);
-  es.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onProgress(data);
-  };
-  es.onerror = () => {
-    es.close();
-  };
-  return () => es.close();
+  let es: EventSource | null = null;
+
+  (async () => {
+    const { getAuth } = await import("firebase/auth");
+    const auth = getAuth();
+    const token = await auth.currentUser?.getIdToken();
+    const url = `${API_BASE}/runs/${runId}/progress${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    es = new EventSource(url);
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => {
+      console.warn(`SSE connection error for run ${runId}`);
+    };
+  })();
+
+  return () => { if (es) es.close(); };
 }
 
 // Types

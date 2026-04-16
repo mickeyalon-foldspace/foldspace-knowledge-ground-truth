@@ -40,12 +40,13 @@ export async function firebaseAuth(
   next: NextFunction
 ): Promise<void> {
   const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
+  const queryToken = req.query.token as string | undefined;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : queryToken;
+
+  if (!token) {
     res.status(401).json({ error: "Missing authorization token" });
     return;
   }
-
-  const token = header.slice(7);
   try {
     const decoded = await admin.auth().verifyIdToken(token);
     req.firebaseUid = decoded.uid;

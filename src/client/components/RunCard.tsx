@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { EvaluationRunData } from "@/lib/api";
 
 interface RunCardProps {
@@ -53,14 +53,22 @@ export default function RunCard({
   onDelete,
   onCancel,
 }: RunCardProps) {
-  const [showLogs, setShowLogs] = useState(false);
+  const [collapsed, setCollapsed] = useState(run.status === "completed");
+  const logRef = useRef<HTMLDivElement>(null);
   const statusClass = statusStyles[run.status] || statusStyles.pending;
   const stageInfo = stage ? STAGE_LABELS[stage] : null;
   const isActive = run.status === "running" || run.status === "pending";
+  const isFailed = run.status === "failed";
+  const showLogPanel = isActive || isFailed;
   const logLines = isActive
     ? (liveLogLines || [])
     : (run.playwrightLog || []);
-  const hasLogs = logLines.length > 0;
+
+  useEffect(() => {
+    if (logRef.current && !collapsed) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [logLines.length, collapsed]);
 
   return (
     <div
@@ -157,18 +165,54 @@ export default function RunCard({
         </p>
       )}
 
-      {hasLogs && (
+      {/* Log terminal — always visible for running/failed runs */}
+      {showLogPanel && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-gray-600">
+              Playwright Log {logLines.length > 0 && `(${logLines.length})`}
+            </span>
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              {collapsed ? "Expand" : "Collapse"}
+            </button>
+          </div>
+          {!collapsed && (
+            <div
+              ref={logRef}
+              className="max-h-56 overflow-y-auto bg-gray-900 text-green-400 text-xs font-mono p-2 rounded border border-gray-700"
+            >
+              {logLines.length === 0 ? (
+                <div className="text-gray-500 animate-pulse">
+                  Waiting for logs...
+                </div>
+              ) : (
+                logLines.map((line, i) => (
+                  <div key={i} className="whitespace-pre-wrap leading-relaxed">
+                    {line}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Collapsible logs for completed runs that have stored logs */}
+      {run.status === "completed" && run.playwrightLog && run.playwrightLog.length > 0 && (
         <div className="mt-2">
           <button
-            onClick={() => setShowLogs(!showLogs)}
+            onClick={() => setCollapsed(!collapsed)}
             className="text-xs text-gray-500 hover:text-gray-700 underline"
           >
-            {showLogs ? "Hide Logs" : `View Logs (${logLines.length} lines)`}
+            {collapsed ? `Show Logs (${run.playwrightLog.length})` : "Hide Logs"}
           </button>
-          {showLogs && (
-            <div className="mt-1 max-h-48 overflow-y-auto bg-gray-900 text-green-400 text-xs font-mono p-2 rounded">
-              {logLines.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap">{line}</div>
+          {!collapsed && (
+            <div className="mt-1 max-h-48 overflow-y-auto bg-gray-900 text-green-400 text-xs font-mono p-2 rounded border border-gray-700">
+              {run.playwrightLog.map((line, i) => (
+                <div key={i} className="whitespace-pre-wrap leading-relaxed">{line}</div>
               ))}
             </div>
           )}
