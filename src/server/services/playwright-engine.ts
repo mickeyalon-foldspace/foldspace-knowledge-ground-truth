@@ -158,7 +158,13 @@ export class PlaywrightEngine {
     if (!this.isLoggedIn) await this.login();
     this.onStage("navigating_to_playground");
 
-    this.appendLog(`Looking for PSR Copilot button on ${this.page.url()}...`);
+    const agentUrl = this.credentials?.url || config.foldspace.url;
+    this.appendLog(`Navigating to agent URL: ${agentUrl} (currently at ${this.page.url()})`);
+    await this.page.goto(agentUrl, { waitUntil: "networkidle", timeout: 90000 });
+    await this.page.waitForTimeout(2000);
+    this.appendLog(`Agent page loaded: ${this.page.url()}`);
+
+    this.appendLog("Looking for PSR Copilot button...");
     const btn = this.page.locator('button[aria-label="PSR Copilot"]');
     const visible = await btn.isVisible().catch(() => false);
     if (!visible) {
