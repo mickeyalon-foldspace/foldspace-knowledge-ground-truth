@@ -1,13 +1,9 @@
 import { auth } from "./firebase";
 
-function getApiBase() {
-  if (typeof window === "undefined") return "http://localhost:3001/api";
-  return window.location.hostname === "localhost"
-    ? "http://localhost:3001/api"
-    : `${window.location.origin}/api`;
-}
-
-const API_BASE = getApiBase();
+const API_BASE =
+  typeof window !== "undefined"
+    ? `${window.location.origin}/api`
+    : "/api";
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const user = auth.currentUser;
