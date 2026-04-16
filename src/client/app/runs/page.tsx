@@ -34,6 +34,7 @@ const JUDGE_MODELS = [
 ];
 
 type Tab = "active" | "completed" | "failed";
+type ViewMode = "card" | "table";
 
 interface LiveRunState {
   stage?: string;
@@ -56,6 +57,7 @@ export default function RunsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("active");
+  const [viewMode, setViewMode] = useState<ViewMode>("card");
 
   // Question selection state
   const [setEntries, setSetEntries] = useState<GoldenSetEntry[]>([]);
@@ -537,7 +539,7 @@ export default function RunsPage() {
         </div>
         )}
 
-        {/* Tabs + bulk actions */}
+        {/* Tabs + view toggle + bulk actions */}
         <div className="flex items-center justify-between border-b border-gray-200 mb-4">
           <div className="flex">
             {(["active", "completed", "failed"] as Tab[]).map((t) => (
@@ -567,27 +569,53 @@ export default function RunsPage() {
               </button>
             ))}
           </div>
-          {isAdmin && tabRuns.length > 0 && (
-            <div className="flex items-center gap-3 pb-1">
-              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={tabRuns.length > 0 && tabRuns.every((r) => selectedRunIds.has(r._id))}
-                  onChange={toggleSelectAllTab}
-                  className="rounded border-gray-300"
-                />
-                Select all
-              </label>
-              {selectedRunIds.size > 0 && (
-                <button
-                  onClick={handleBulkDelete}
-                  className="text-xs bg-red-600 text-white rounded px-3 py-1 hover:bg-red-700 transition-colors"
-                >
-                  Delete {selectedRunIds.size} selected
-                </button>
-              )}
+          <div className="flex items-center gap-3 pb-1">
+            {/* View toggle */}
+            <div className="flex items-center bg-gray-100 rounded-md p-0.5">
+              <button
+                onClick={() => setViewMode("card")}
+                className={`p-1.5 rounded transition-colors ${viewMode === "card" ? "bg-white shadow-sm text-blue-600" : "text-gray-400 hover:text-gray-600"}`}
+                title="Card view"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setViewMode("table")}
+                className={`p-1.5 rounded transition-colors ${viewMode === "table" ? "bg-white shadow-sm text-blue-600" : "text-gray-400 hover:text-gray-600"}`}
+                title="Table view"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" d="M3 6h18M3 12h18M3 18h18" />
+                </svg>
+              </button>
             </div>
-          )}
+            {isAdmin && tabRuns.length > 0 && (
+              <>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={tabRuns.length > 0 && tabRuns.every((r) => selectedRunIds.has(r._id))}
+                    onChange={toggleSelectAllTab}
+                    className="rounded border-gray-300"
+                  />
+                  Select all
+                </label>
+                {selectedRunIds.size > 0 && (
+                  <button
+                    onClick={handleBulkDelete}
+                    className="text-xs bg-red-600 text-white rounded px-3 py-1 hover:bg-red-700 transition-colors"
+                  >
+                    Delete {selectedRunIds.size} selected
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Runs list */}
@@ -601,7 +629,140 @@ export default function RunsPage() {
                 ? "No completed runs yet."
                 : "No failed runs."}
           </div>
+        ) : viewMode === "table" ? (
+          /* ---- TABLE VIEW ---- */
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {isAdmin && (
+                      <th className="w-10 px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={tabRuns.length > 0 && tabRuns.every((r) => selectedRunIds.has(r._id))}
+                          onChange={toggleSelectAllTab}
+                          className="rounded border-gray-300"
+                        />
+                      </th>
+                    )}
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Golden Set</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Agent</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Evals</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Overall</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Correct</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Complete</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Relevant</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase tracking-wider">Faithful</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {tabRuns.map((run) => {
+                    const s = run.summary;
+                    return (
+                      <tr key={run._id} className="hover:bg-gray-50 transition-colors">
+                        {isAdmin && (
+                          <td className="px-3 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedRunIds.has(run._id)}
+                              onChange={() => toggleRunSelection(run._id)}
+                              className="rounded border-gray-300"
+                            />
+                          </td>
+                        )}
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900 max-w-[200px] truncate">{run.goldenSetName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-[140px] truncate">{run.agentName || "-"}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusStyles[run.status] || statusStyles.pending}`}>
+                            {run.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {s ? (
+                            <span className="inline-flex items-center justify-center min-w-[40px] px-2 py-1 rounded-md bg-indigo-50 border border-indigo-200 text-indigo-700 text-sm font-bold">
+                              {s.completedQuestions}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {s ? (
+                            <span className={`inline-flex items-center justify-center min-w-[40px] px-2 py-1 rounded-md text-sm font-bold text-white bg-gradient-to-r ${
+                              s.avgOverallScore >= 4 ? "from-green-500 to-emerald-600" :
+                              s.avgOverallScore >= 3 ? "from-yellow-500 to-amber-600" :
+                              s.avgOverallScore >= 2 ? "from-orange-500 to-orange-600" :
+                              "from-red-500 to-red-600"
+                            }`}>
+                              {s.avgOverallScore.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </td>
+                        {([
+                          s?.avgCorrectness,
+                          s?.avgCompleteness,
+                          s?.avgRelevance,
+                          s?.avgFaithfulness,
+                        ] as (number | undefined)[]).map((val, idx) => (
+                          <td key={idx} className="px-4 py-3 text-center">
+                            {val != null ? (
+                              <span className={`text-sm font-semibold ${
+                                val >= 4 ? "text-green-600" :
+                                val >= 3 ? "text-yellow-600" :
+                                val >= 2 ? "text-orange-500" :
+                                "text-red-600"
+                              }`}>
+                                {val.toFixed(1)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-sm">-</span>
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{new Date(run.createdAt).toLocaleDateString()}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {run.status === "completed" && (
+                              <button
+                                onClick={() => router.push(`/runs/${run._id}`)}
+                                className="text-xs bg-blue-600 text-white rounded px-2.5 py-1 hover:bg-blue-700 transition-colors"
+                              >
+                                View
+                              </button>
+                            )}
+                            {run.status === "running" && isAdmin && (
+                              <button
+                                onClick={() => handleCancel(run._id)}
+                                className="text-xs bg-yellow-500 text-white rounded px-2.5 py-1 hover:bg-yellow-600 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleDelete(run._id)}
+                                className="text-xs text-red-600 border border-red-200 rounded px-2.5 py-1 hover:bg-red-50 transition-colors"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
+          /* ---- CARD VIEW ---- */
           <div className="space-y-4">
             {tabRuns.map((run) => {
               const live = liveStates[run._id] || {};

@@ -193,6 +193,28 @@ export class EvaluationRunner {
             entry.question
           );
 
+          if (pwResult.failed) {
+            console.error(
+              `[Runner] FAILED to get results for entry ${i} ("${entry.question.substring(0, 50)}") — skipping storage`
+            );
+
+            this.emitProgress(runId, {
+              status: "running",
+              progress,
+              stage: "question_failed_no_results",
+              currentQuestion: i + 1,
+              totalQuestions: entries.length,
+              currentEntry: entry.question.substring(0, 80),
+              error: "FAILED to get results — analysis/articles not retrieved",
+            });
+
+            await EvaluationRun.findByIdAndUpdate(runId, {
+              progress,
+              playwrightLog: this.playwrightEngine.getLogs(),
+            });
+            continue;
+          }
+
           this.emitProgress(runId, {
             status: "running",
             progress,

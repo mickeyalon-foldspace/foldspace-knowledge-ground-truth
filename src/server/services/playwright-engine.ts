@@ -22,6 +22,7 @@ export interface PlaywrightResult {
   searchKnowledge: ISearchKnowledge;
   responseTimeMs: number;
   rawApiResponses: unknown[];
+  failed: boolean;
 }
 
 export type StageCallback = (stage: string) => void;
@@ -325,48 +326,91 @@ export class PlaywrightEngine {
     this.appendLog(`chatId captured: ${chatId || "NONE"}, backendUrl: ${this.getBackendUrl()}`);
     let searchKnowledge: ISearchKnowledge = { queries: [], chunks: [] };
     const rawApiResponses: unknown[] = [];
+    let failed = false;
+
+    const ANALYSIS_TIMEOUT_MS = 30_000;
+    const ANALYSIS_POLL_INTERVAL_MS = 3_000;
+
+    if (!chatId) {
+      this.appendLog("Waiting for chatId to be captured (up to 30s)...");
+      const chatIdDeadline = Date.now() + ANALYSIS_TIMEOUT_MS;
+      while (!chatId && Date.now() < chatIdDeadline) {
+        await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+        this.appendLog(`chatId poll: ${chatId || "still waiting..."}`);
+      }
+    }
 
     if (chatId) {
-      try {
-        this.appendLog(`Fetching chat data: ${this.getBackendUrl()}/admin/ai/chats/${chatId}`);
-        const chatData = await this.fetchChatData(chatId);
-        if ((chatData as any).error) {
-          this.appendLog(`Chat data returned error: ${(chatData as any).error}`);
-        }
-        rawApiResponses.push({ type: "chat", data: chatData });
+      const analysisDeadline = Date.now() + ANALYSIS_TIMEOUT_MS;
+      let attemptNum = 0;
 
-        const messages = (chatData as any)?.messages;
-        let messageId = "";
-        if (Array.isArray(messages)) {
-          for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i];
-            if (msg.id && msg.type !== "USER_MESSAGE") {
-              messageId = msg.id;
-              break;
+      while (Date.now() < analysisDeadline) {
+        attemptNum++;
+        try {
+          this.appendLog(`Analysis fetch attempt ${attemptNum}: ${this.getBackendUrl()}/admin/ai/chats/${chatId}`);
+          const chatData = await this.fetchChatData(chatId);
+          if ((chatData as any).error) {
+            this.appendLog(`Chat data returned error: ${(chatData as any).error}, retrying...`);
+            await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+            continue;
+          }
+
+          const messages = (chatData as any)?.messages;
+          let messageId = "";
+          if (Array.isArray(messages)) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i];
+              if (msg.id && msg.type !== "USER_MESSAGE") {
+                messageId = msg.id;
+                break;
+              }
             }
           }
-        }
 
-        if (messageId) {
+          if (!messageId) {
+            this.appendLog(`No assistant message ID found yet (attempt ${attemptNum}), retrying...`);
+            await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+            continue;
+          }
+
           this.appendLog(`Fetching analysis: chatId=${chatId}, messageId=${messageId}`);
-          const analysisData = await this.fetchMessageAnalysis(
-            chatId,
-            messageId
-          );
+          const analysisData = await this.fetchMessageAnalysis(chatId, messageId);
+
+          if ((analysisData as any).error) {
+            this.appendLog(`Analysis returned error: ${(analysisData as any).error}, retrying...`);
+            await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+            continue;
+          }
+
+          rawApiResponses.push({ type: "chat", data: chatData });
           rawApiResponses.push({ type: "analysis", data: analysisData });
-          searchKnowledge =
-            this.extractSearchKnowledge(analysisData);
+          searchKnowledge = this.extractSearchKnowledge(analysisData);
           this.appendLog(
             `Fetched analysis: ${searchKnowledge.chunks.length} chunks, ${searchKnowledge.queries.length} queries (chatId=${chatId}, messageId=${messageId})`
           );
-        } else {
-          this.appendLog("WARNING: No assistant message ID found in chat data");
+
+          if (searchKnowledge.chunks.length > 0) {
+            break;
+          }
+
+          this.appendLog(`No chunks found yet (attempt ${attemptNum}), retrying...`);
+          rawApiResponses.length = 0;
+          await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+        } catch (err) {
+          this.appendLog(`Analysis API attempt ${attemptNum} failed: ${err instanceof Error ? err.message : String(err)}`);
+          if (Date.now() < analysisDeadline) {
+            await this.page.waitForTimeout(ANALYSIS_POLL_INTERVAL_MS);
+          }
         }
-      } catch (err) {
-        this.appendLog(`Analysis API call failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+
+      if (searchKnowledge.chunks.length === 0) {
+        this.appendLog("FAILED to get results: could not retrieve analysis/articles after 30s of polling");
+        failed = true;
       }
     } else {
-      this.appendLog("WARNING: Could not capture chatId from new-chat response");
+      this.appendLog("FAILED to get results: could not capture chatId after 30s of polling");
+      failed = true;
     }
 
     return {
@@ -375,6 +419,7 @@ export class PlaywrightEngine {
       searchKnowledge,
       responseTimeMs,
       rawApiResponses,
+      failed,
     };
   }
 

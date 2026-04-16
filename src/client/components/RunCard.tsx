@@ -36,11 +36,33 @@ const STAGE_LABELS: Record<string, { label: string; icon: string }> = {
   fetching_analysis: { label: "Fetching analysis data", icon: "📡" },
   question_complete: { label: "Question done", icon: "✅" },
   question_error: { label: "Question failed", icon: "❌" },
+  question_failed_no_results: { label: "No results retrieved", icon: "⚠️" },
   computing_summary: { label: "Computing summary", icon: "📊" },
   done: { label: "Complete", icon: "🎉" },
   cancelled: { label: "Cancelled", icon: "🚫" },
   error: { label: "Error", icon: "💥" },
 };
+
+function scoreColor(score: number): string {
+  if (score >= 4) return "text-green-600";
+  if (score >= 3) return "text-yellow-600";
+  if (score >= 2) return "text-orange-500";
+  return "text-red-600";
+}
+
+function scoreBgColor(score: number): string {
+  if (score >= 4) return "bg-green-50 border-green-200";
+  if (score >= 3) return "bg-yellow-50 border-yellow-200";
+  if (score >= 2) return "bg-orange-50 border-orange-200";
+  return "bg-red-50 border-red-200";
+}
+
+function overallScoreBg(score: number): string {
+  if (score >= 4) return "from-green-500 to-emerald-600";
+  if (score >= 3) return "from-yellow-500 to-amber-600";
+  if (score >= 2) return "from-orange-500 to-orange-600";
+  return "from-red-500 to-red-600";
+}
 
 function LogTerminal({
   lines,
@@ -169,6 +191,8 @@ export default function RunCard({
   const showLogPanel = isActive || isFailed;
   const logLines = isActive ? (liveLogLines || []) : (run.playwrightLog || []);
 
+  const hasOverallScore = run.summary && typeof run.summary.avgOverallScore === "number";
+
   return (
     <>
       <div
@@ -178,7 +202,8 @@ export default function RunCard({
             : "border-gray-200 hover:shadow-md"
         }`}
       >
-        <div className="flex items-start justify-between">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h3 className="text-sm font-semibold text-gray-900 truncate">
@@ -198,12 +223,35 @@ export default function RunCard({
               )}
               {run.agentName && " · "}
               Model: {run.judgeModel} ·{" "}
-              {run.summary
-                ? `${run.summary.completedQuestions}/${run.summary.totalQuestions} evals · `
-                : ""}
               {new Date(run.createdAt).toLocaleString()}
             </p>
           </div>
+
+          {/* Prominent eval count + overall score */}
+          {run.summary && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="flex flex-col items-center px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg">
+                <span className="text-2xl font-bold text-indigo-700 leading-none">
+                  {run.summary.completedQuestions}
+                </span>
+                <span className="text-[10px] font-medium text-indigo-500 uppercase tracking-wide mt-0.5">
+                  {run.summary.completedQuestions === 1 ? "eval" : "evals"}
+                </span>
+              </div>
+              {hasOverallScore && (
+                <div
+                  className={`flex flex-col items-center px-3 py-1.5 rounded-lg bg-gradient-to-br ${overallScoreBg(run.summary!.avgOverallScore)} text-white min-w-[56px]`}
+                >
+                  <span className="text-2xl font-bold leading-none">
+                    {run.summary!.avgOverallScore.toFixed(1)}
+                  </span>
+                  <span className="text-[10px] font-medium opacity-90 uppercase tracking-wide mt-0.5">
+                    score
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Live stage indicator */}
@@ -246,7 +294,7 @@ export default function RunCard({
           </div>
         )}
 
-        {/* Completed scores */}
+        {/* Completed scores — detailed breakdown */}
         {run.summary && run.status === "completed" && (
           <div className="mt-3 grid grid-cols-4 gap-2">
             {[
@@ -255,11 +303,14 @@ export default function RunCard({
               { label: "Relevance", value: run.summary.avgRelevance },
               { label: "Faithfulness", value: run.summary.avgFaithfulness },
             ].map(({ label, value }) => (
-              <div key={label} className="text-center">
-                <div className="text-lg font-semibold text-gray-900">
+              <div
+                key={label}
+                className={`text-center py-1.5 px-1 rounded-md border ${scoreBgColor(value)}`}
+              >
+                <div className={`text-lg font-semibold ${scoreColor(value)}`}>
                   {value.toFixed(1)}
                 </div>
-                <div className="text-xs text-gray-500">{label}</div>
+                <div className="text-[10px] text-gray-500 font-medium">{label}</div>
               </div>
             ))}
           </div>
@@ -269,7 +320,7 @@ export default function RunCard({
           <p className="mt-2 text-xs text-red-600">Error: {run.error}</p>
         )}
 
-        {/* Live log terminal — always visible for running/failed */}
+        {/* Live log terminal */}
         {showLogPanel && (
           <div className="mt-3">
             <div className="flex items-center justify-between mb-1">
@@ -290,7 +341,7 @@ export default function RunCard({
           </div>
         )}
 
-        {/* Completed runs — show log link if logs exist */}
+        {/* Completed runs — log link */}
         {run.status === "completed" &&
           run.playwrightLog &&
           run.playwrightLog.length > 0 && (
