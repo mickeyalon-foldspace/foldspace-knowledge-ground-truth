@@ -35,11 +35,29 @@ export class PlaywrightEngine {
     this.onStage("launching_browser");
     this.browser = await chromium.launch({
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-gpu",
+        "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+        "--disable-component-extensions-with-background-pages",
+        "--no-first-run",
+        "--disable-default-apps",
+        "--disable-translate",
+        "--disable-sync",
+        "--single-process",
+      ],
     });
     this.context = await this.browser.newContext({
       viewport: { width: 1280, height: 900 },
       locale: "en-US",
+      javaScriptEnabled: true,
+      ignoreHTTPSErrors: true,
     });
     this.page = await this.context.newPage();
   }
