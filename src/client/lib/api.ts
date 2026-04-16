@@ -277,6 +277,7 @@ export interface AgentData {
   _id: string;
   name: string;
   url: string;
+  playgroundUrl?: string;
   apiBaseUrl: string;
   username: string;
   createdAt: string;
@@ -286,6 +287,7 @@ export interface AgentData {
 export interface AgentFormData {
   name: string;
   url: string;
+  playgroundUrl?: string;
   apiBaseUrl: string;
   username: string;
   password: string;

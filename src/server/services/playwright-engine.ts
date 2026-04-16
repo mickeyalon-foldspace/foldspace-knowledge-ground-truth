@@ -10,6 +10,7 @@ if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: 
 
 export interface AgentCredentials {
   url: string;
+  playgroundUrl?: string;
   apiBaseUrl: string;
   username: string;
   password: string;
@@ -158,30 +159,26 @@ export class PlaywrightEngine {
     if (!this.isLoggedIn) await this.login();
     this.onStage("navigating_to_playground");
 
-    this.appendLog(`Currently at: ${this.page.url()}`);
-
-    // Check if Copilot button is already on the current page (login may have redirected here)
-    let btn = this.page.locator('button[aria-label="PSR Copilot"]');
-    let visible = await btn.isVisible().catch(() => false);
-
-    if (!visible) {
-      // Not on the right page — navigate to the agent URL
-      const agentUrl = this.credentials?.url || config.foldspace.url;
-      this.appendLog(`Copilot button not found, navigating to agent URL: ${agentUrl}`);
-      await this.page.goto(agentUrl, { waitUntil: "networkidle", timeout: 90000 });
+    // Navigate to the playground URL (the page with the Copilot button)
+    const playgroundUrl = this.credentials?.playgroundUrl;
+    if (playgroundUrl) {
+      this.appendLog(`Navigating to playground URL: ${playgroundUrl}`);
+      await this.page.goto(playgroundUrl, { waitUntil: "networkidle", timeout: 90000 });
       await this.page.waitForTimeout(2000);
-      this.appendLog(`Agent page loaded: ${this.page.url()}`);
-
-      btn = this.page.locator('button[aria-label="PSR Copilot"]');
-      visible = await btn.isVisible().catch(() => false);
+      this.appendLog(`Playground page loaded: ${this.page.url()}`);
+    } else {
+      this.appendLog(`No playground URL set, staying on current page: ${this.page.url()}`);
     }
+
+    this.appendLog("Looking for PSR Copilot button...");
+    const btn = this.page.locator('button[aria-label="PSR Copilot"]');
+    const visible = await btn.isVisible().catch(() => false);
 
     if (!visible) {
       await this.screenshot("copilot-button-not-found");
-      this.appendLog("PSR Copilot button still not visible — screenshot saved");
+      this.appendLog(`PSR Copilot button not visible on ${this.page.url()} — screenshot saved`);
     }
 
-    this.appendLog("Clicking PSR Copilot button...");
     await btn.click();
     await this.page.waitForLoadState("networkidle").catch(() => {});
     await this.page.waitForTimeout(2000);

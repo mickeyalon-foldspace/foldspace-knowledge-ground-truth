@@ -73,6 +73,7 @@ export class EvaluationRunner {
 
     const agentCreds: AgentCredentials = {
       url: agent.url,
+      playgroundUrl: agent.playgroundUrl,
       apiBaseUrl: agent.apiBaseUrl,
       username: agent.username,
       password: agent.password,

@@ -16,6 +16,7 @@ import type { AgentData, AgentFormData } from "@/lib/api";
 const EMPTY_FORM: AgentFormData = {
   name: "",
   url: "https://app.foldspace.ai/",
+  playgroundUrl: "",
   apiBaseUrl: "https://app-be.foldspace.ai",
   username: "",
   password: "",
@@ -81,6 +82,7 @@ export default function AgentsPage() {
     setForm({
       name: agent.name,
       url: agent.url,
+      playgroundUrl: agent.playgroundUrl || "",
       apiBaseUrl: agent.apiBaseUrl,
       username: agent.username,
       password: "",
@@ -189,6 +191,21 @@ export default function AgentsPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Playground URL
+                  <span className="text-gray-400 font-normal ml-1">(page with the Copilot button — navigated to after login)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.playgroundUrl || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, playgroundUrl: e.target.value })
+                  }
+                  placeholder="https://dev.app.foldspace.ai/agent/xxx/conversations"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
                   API Base URL
                 </label>
                 <input
@@ -268,8 +285,14 @@ export default function AgentsPage() {
                     </h3>
                     <div className="mt-1 text-xs text-gray-500 space-y-0.5">
                       <p>
-                        <span className="text-gray-400">URL:</span> {agent.url}
+                        <span className="text-gray-400">Login URL:</span> {agent.url}
                       </p>
+                      {agent.playgroundUrl && (
+                        <p>
+                          <span className="text-gray-400">Playground:</span>{" "}
+                          {agent.playgroundUrl}
+                        </p>
+                      )}
                       <p>
                         <span className="text-gray-400">API:</span>{" "}
                         {agent.apiBaseUrl}

@@ -4,6 +4,7 @@ export interface IAgent extends Document {
   orgId: Types.ObjectId;
   name: string;
   url: string;
+  playgroundUrl?: string;
   apiBaseUrl: string;
   username: string;
   password: string;
@@ -16,6 +17,7 @@ const agentSchema = new Schema<IAgent>(
     orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true },
     name: { type: String, required: true },
     url: { type: String, required: true },
+    playgroundUrl: { type: String },
     apiBaseUrl: { type: String, required: true },
     username: { type: String, required: true },
     password: { type: String, required: true },
