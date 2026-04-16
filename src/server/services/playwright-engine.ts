@@ -11,6 +11,7 @@ if (!fs.existsSync(SCREENSHOTS_DIR)) fs.mkdirSync(SCREENSHOTS_DIR, { recursive: 
 export interface AgentCredentials {
   url: string;
   apiBaseUrl: string;
+  backendUrl: string;
   username: string;
   password: string;
 }
@@ -321,13 +322,17 @@ export class PlaywrightEngine {
     }
 
     this.onStage("fetching_analysis");
-    this.appendLog(`chatId captured: ${chatId || "NONE"}`);
+    this.appendLog(`chatId captured: ${chatId || "NONE"}, backendUrl: ${this.getBackendUrl()}`);
     let searchKnowledge: ISearchKnowledge = { queries: [], chunks: [] };
     const rawApiResponses: unknown[] = [];
 
     if (chatId) {
       try {
+        this.appendLog(`Fetching chat data: ${this.getBackendUrl()}/admin/ai/chats/${chatId}`);
         const chatData = await this.fetchChatData(chatId);
+        if ((chatData as any).error) {
+          this.appendLog(`Chat data returned error: ${(chatData as any).error}`);
+        }
         rawApiResponses.push({ type: "chat", data: chatData });
 
         const messages = (chatData as any)?.messages;
@@ -343,6 +348,7 @@ export class PlaywrightEngine {
         }
 
         if (messageId) {
+          this.appendLog(`Fetching analysis: chatId=${chatId}, messageId=${messageId}`);
           const analysisData = await this.fetchMessageAnalysis(
             chatId,
             messageId
@@ -376,13 +382,14 @@ export class PlaywrightEngine {
    * Fetch conversation data including all messages.
    * GET {apiBaseUrl}/admin/ai/chats/{chatId}
    */
-  private getApiOrigin(): string {
-    const url = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
+  private getBackendUrl(): string {
+    if (this.credentials?.backendUrl) return this.credentials.backendUrl.replace(/\/$/, "");
+    const playgroundUrl = this.credentials?.apiBaseUrl || config.foldspace.apiBaseUrl;
     try {
-      const parsed = new URL(url);
-      return parsed.origin;
+      const parsed = new URL(playgroundUrl);
+      return parsed.origin.replace("app.", "app-be.");
     } catch {
-      return url;
+      return playgroundUrl;
     }
   }
 
@@ -391,7 +398,7 @@ export class PlaywrightEngine {
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const base = this.getApiOrigin();
+    const base = this.getBackendUrl();
     const apiUrl = `${base}/admin/ai/chats/${chatId}`;
 
     return (await this.page.evaluate(async (url: string) => {
@@ -415,7 +422,7 @@ export class PlaywrightEngine {
   ): Promise<Record<string, unknown>> {
     if (!this.page) throw new Error("Browser not initialized");
 
-    const base = this.getApiOrigin();
+    const base = this.getBackendUrl();
     const apiUrl = `${base}/v1/agent/playground/message`;
 
     return (await this.page.evaluate(
@@ -483,6 +490,8 @@ export class PlaywrightEngine {
             chunkId,
             title: item.title || item.name || "Untitled",
             content: (item.content as string) || "",
+            url: item.url || undefined,
+            score: typeof item.score === "number" ? item.score : undefined,
           });
         }
       }

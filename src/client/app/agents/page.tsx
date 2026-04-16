@@ -17,6 +17,7 @@ const EMPTY_FORM: AgentFormData = {
   name: "",
   url: "https://app.foldspace.ai/",
   apiBaseUrl: "https://app.foldspace.ai/agent/.../playground",
+  backendUrl: "https://app-be.foldspace.ai",
   username: "",
   password: "",
 };
@@ -82,6 +83,7 @@ export default function AgentsPage() {
       name: agent.name,
       url: agent.url,
       apiBaseUrl: agent.apiBaseUrl,
+      backendUrl: agent.backendUrl || "",
       username: agent.username,
       password: "",
     });
@@ -204,6 +206,21 @@ export default function AgentsPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Backend API URL
+                  <span className="text-gray-400 font-normal ml-1">(for fetching articles)</span>
+                </label>
+                <input
+                  type="text"
+                  value={form.backendUrl || ""}
+                  onChange={(e) =>
+                    setForm({ ...form, backendUrl: e.target.value })
+                  }
+                  placeholder="https://dev.app-be.foldspace.ai"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
                   Username (Email)
                 </label>
                 <input
@@ -275,6 +292,12 @@ export default function AgentsPage() {
                         <span className="text-gray-400">Playground:</span>{" "}
                         {agent.apiBaseUrl}
                       </p>
+                      {agent.backendUrl && (
+                        <p>
+                          <span className="text-gray-400">Backend:</span>{" "}
+                          {agent.backendUrl}
+                        </p>
+                      )}
                       <p>
                         <span className="text-gray-400">User:</span>{" "}
                         {agent.username}

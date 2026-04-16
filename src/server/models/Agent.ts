@@ -5,6 +5,7 @@ export interface IAgent extends Document {
   name: string;
   url: string;
   apiBaseUrl: string;
+  backendUrl: string;
   username: string;
   password: string;
   createdAt: Date;
@@ -17,6 +18,7 @@ const agentSchema = new Schema<IAgent>(
     name: { type: String, required: true },
     url: { type: String, required: true },
     apiBaseUrl: { type: String, required: true },
+    backendUrl: { type: String, default: "" },
     username: { type: String, required: true },
     password: { type: String, required: true },
   },

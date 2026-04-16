@@ -14,6 +14,8 @@ export interface IRetrievedChunk {
   chunkId: string;
   title: string;
   content: string;
+  url?: string;
+  score?: number;
 }
 
 export interface ISearchKnowledge {
@@ -62,6 +64,8 @@ const retrievedChunkSchema = new Schema(
     chunkId: { type: String, required: true },
     title: { type: String, required: true },
     content: { type: String, required: true },
+    url: { type: String },
+    score: { type: Number },
   },
   { _id: false }
 );

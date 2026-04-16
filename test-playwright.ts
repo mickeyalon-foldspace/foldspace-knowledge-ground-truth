@@ -3,103 +3,106 @@ import { chromium } from "playwright";
 const CREDS = {
   url: "https://dev.app.foldspace.ai/",
   apiBaseUrl: "https://dev.app.foldspace.ai/agent/23603b2d-7332-4b4d-9208-99f2e1090bb3/playground",
+  backendUrl: "https://dev.app-be.foldspace.ai",
   username: "tamarw+dev@foldspace.ai",
   password: "",
 };
 
 async function test() {
-  console.log("=== Playwright Navigation Test ===\n");
+  console.log("=== Playwright Full Flow Test ===\n");
 
-  console.log("[1] Launching browser...");
   const browser = await chromium.launch({ headless: false });
-  const context = await browser.newContext({
+  const page = await (await browser.newContext({
     viewport: { width: 1280, height: 900 },
     ignoreHTTPSErrors: true,
-  });
-  const page = await context.newPage();
+  })).newPage();
   page.setDefaultTimeout(10000);
 
-  // Step 1: Login
-  console.log(`[2] Navigating to login: ${CREDS.url}`);
+  console.log("[1] Login...");
   await page.goto(CREDS.url, { waitUntil: "domcontentloaded", timeout: 10000 });
   await page.waitForTimeout(2000);
-  console.log(`    Page: ${page.url()}`);
-
-  console.log("[3] Filling credentials...");
   await page.locator('input[name="email"]').fill(CREDS.username);
   await page.locator('input[name="password"]').fill(CREDS.password);
-
-  console.log("[4] Submitting...");
   await Promise.all([
-    page.waitForNavigation({ timeout: 10000 })
-      .catch(() => page.waitForLoadState("domcontentloaded", { timeout: 10000 })),
+    page.waitForNavigation({ timeout: 10000 }).catch(() => {}),
     page.locator('button[type="submit"]').click(),
   ]);
   await page.waitForTimeout(3000);
-  console.log(`    After login: ${page.url()}`);
+  console.log(`    OK: ${page.url()}`);
 
-  // Step 2: Navigate to playground
-  console.log(`[5] Navigating to playground: ${CREDS.apiBaseUrl}`);
-  try {
-    await page.goto(CREDS.apiBaseUrl, { waitUntil: "domcontentloaded", timeout: 10000 });
-  } catch {
-    console.log(`    goto timed out, continuing at ${page.url()}`);
-  }
+  console.log(`[2] Playground: ${CREDS.apiBaseUrl}`);
+  try { await page.goto(CREDS.apiBaseUrl, { waitUntil: "domcontentloaded", timeout: 10000 }); } catch {}
   await page.waitForTimeout(3000);
-  console.log(`    Page: ${page.url()}`);
 
-  // Step 3: Wait for textarea
-  console.log("[6] Waiting for textarea...");
+  let chatId = "";
+  page.on("response", async (r) => {
+    try {
+      if (r.url().includes("/playground/new/chat") && r.status() < 300) {
+        const b = await r.json().catch(() => null);
+        if (b?.chatId) chatId = b.chatId;
+      }
+    } catch {}
+  });
+
+  console.log("[3] Asking...");
   const textarea = page.locator("textarea").first();
-  try {
-    await textarea.waitFor({ state: "visible", timeout: 10000 });
-    console.log("    Textarea FOUND!");
-  } catch {
-    console.error("    Textarea NOT FOUND");
-    await page.screenshot({ path: "test-textarea-not-found.png", fullPage: true });
-    
-    // Debug: list all textareas and inputs
-    const textareas = await page.locator("textarea").count();
-    const inputs = await page.locator("input").count();
-    console.log(`    Found ${textareas} textareas, ${inputs} inputs on page`);
-    
-    await browser.close();
-    process.exit(1);
+  await textarea.waitFor({ state: "visible", timeout: 10000 });
+  await textarea.fill("What is Optibus?");
+  await textarea.press("Enter");
+
+  for (let i = 0; i < 15; i++) {
+    await page.waitForTimeout(2000);
+    const done = await page.evaluate(() =>
+      document.querySelector(".eucera-copilot-main-content-wrapper")?.textContent?.includes("View Analysis") || false
+    );
+    console.log(`    Poll ${i + 1}: done=${done}, chatId=${chatId || "..."}`);
+    if (done) break;
   }
 
-  // Step 4: Type a question
-  console.log("[7] Typing test question...");
-  await textarea.fill("What is the capital of France?");
-  await page.waitForTimeout(300);
-  console.log("    Question filled");
+  if (!chatId) { console.error("No chatId!"); await browser.close(); process.exit(1); }
 
-  console.log("[8] Pressing Enter...");
-  await textarea.press("Enter");
-  console.log("    Submitted! Waiting for response...");
+  const chatData = await page.evaluate(async (url: string) => {
+    const r = await fetch(url, { headers: { accept: "application/json" }, credentials: "include" });
+    return r.ok ? r.json() : { error: r.status };
+  }, `${CREDS.backendUrl}/admin/ai/chats/${chatId}`) as any;
 
-  // Wait for response
-  for (let i = 0; i < 30; i++) {
-    await page.waitForTimeout(2000);
-    const text = await page.evaluate(() => {
-      const wrapper = document.querySelector(".eucera-copilot-main-content-wrapper");
-      if (!wrapper) return { thinking: true, text: "", hasAnalysis: false };
-      const thinking = !!wrapper.textContent?.includes("Thinking");
-      const hasAnalysis = !!wrapper.textContent?.includes("View Analysis");
-      return { thinking, text: wrapper.textContent?.substring(0, 200) || "", hasAnalysis };
+  if (chatData.error) { console.error(`Chat data: ${chatData.error}`); await browser.close(); process.exit(1); }
+
+  const messages = chatData.messages || [];
+  let messageId = "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].type !== "USER_MESSAGE" && messages[i].id) { messageId = messages[i].id; break; }
+  }
+
+  if (!messageId) { console.error("No messageId!"); await browser.close(); process.exit(1); }
+
+  const analysis = await page.evaluate(async (p: { url: string; chatId: string; messageId: string }) => {
+    const r = await fetch(p.url, {
+      method: "POST",
+      headers: { accept: "application/json, text/plain, */*", "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ chatId: p.chatId, messageId: p.messageId }),
     });
-    console.log(`    Poll ${i+1}/30: thinking=${text.thinking}, hasAnalysis=${text.hasAnalysis}, len=${text.text.length}`);
-    if (text.hasAnalysis || (!text.thinking && text.text.length > 100)) {
-      console.log("\n=== TEST PASSED === Response received!");
-      break;
+    return r.ok ? r.json() : { error: r.status };
+  }, { url: `${CREDS.backendUrl}/v1/agent/playground/message`, chatId, messageId }) as any;
+
+  if (analysis.error) {
+    console.error(`Analysis: ${analysis.error}`);
+  } else {
+    const fns = analysis.functions || [];
+    for (const fn of fns) {
+      if (fn.functionName !== "search_knowledge") continue;
+      console.log(`\n[4] search_knowledge: ${fn.result?.data?.length || 0} chunks`);
+      console.log(`    queries: ${JSON.stringify(fn.arguments?.queryArray)}`);
+      for (const item of (fn.result?.data || [])) {
+        console.log(`    - ${item.title} | score=${item.score?.toFixed(3)} | url=${item.url || "none"}`);
+      }
     }
   }
 
-  console.log("\nKeeping browser open 5s...");
-  await page.waitForTimeout(5000);
+  console.log("\n=== DONE ===");
+  await page.waitForTimeout(3000);
   await browser.close();
 }
 
-test().catch((err) => {
-  console.error("Test failed:", err.message);
-  process.exit(1);
-});
+test().catch((e) => { console.error("FAIL:", e.message); process.exit(1); });

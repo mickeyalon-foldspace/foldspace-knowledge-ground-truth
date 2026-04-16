@@ -54,16 +54,48 @@ export default function ArticlesPanel({ searchKnowledge }: ArticlesPanelProps) {
                 }
                 className="w-full flex items-center justify-between px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100 transition-colors text-left"
               >
-                <span className="font-medium text-gray-900 truncate">
-                  {chunk.title}
-                </span>
-                <span className="ml-2 text-xs text-gray-400 shrink-0">
-                  {expandedChunk === idx ? "−" : "+"}
-                </span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium text-gray-900 truncate">
+                    {chunk.title}
+                  </span>
+                  {chunk.score != null && (
+                    <span className="text-[10px] text-gray-400 shrink-0">
+                      {(chunk.score * 100).toFixed(0)}%
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  {chunk.url && (
+                    <a
+                      href={chunk.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                    >
+                      Article ↗
+                    </a>
+                  )}
+                  <span className="text-xs text-gray-400">
+                    {expandedChunk === idx ? "−" : "+"}
+                  </span>
+                </div>
               </button>
               {expandedChunk === idx && (
-                <div className="px-3 py-2 bg-white text-xs text-gray-700 whitespace-pre-wrap border-t border-gray-100 max-h-64 overflow-auto">
-                  {chunk.content}
+                <div className="px-3 py-2 bg-white text-xs text-gray-700 border-t border-gray-100">
+                  {chunk.url && (
+                    <a
+                      href={chunk.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-blue-600 hover:underline mb-2 break-all"
+                    >
+                      {chunk.url}
+                    </a>
+                  )}
+                  <div className="whitespace-pre-wrap max-h-64 overflow-auto">
+                    {chunk.content}
+                  </div>
                 </div>
               )}
             </div>

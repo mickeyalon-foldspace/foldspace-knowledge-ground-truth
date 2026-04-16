@@ -286,6 +286,7 @@ export interface AgentData {
   name: string;
   url: string;
   apiBaseUrl: string;
+  backendUrl?: string;
   username: string;
   createdAt: string;
   updatedAt?: string;
@@ -295,6 +296,7 @@ export interface AgentFormData {
   name: string;
   url: string;
   apiBaseUrl: string;
+  backendUrl?: string;
   username: string;
   password: string;
 }
@@ -374,6 +376,8 @@ export interface RetrievedChunk {
   chunkId: string;
   title: string;
   content: string;
+  url?: string;
+  score?: number;
 }
 
 export interface SearchKnowledge {
