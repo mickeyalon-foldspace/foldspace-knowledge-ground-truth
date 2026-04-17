@@ -10,6 +10,7 @@ import {
 import {
   EvaluationResult,
   IEvaluationResult,
+  ResultType,
 } from "../models/EvaluationResult.js";
 import { PlaywrightEngine, AgentCredentials } from "./playwright-engine.js";
 import { JudgeService } from "./judge.js";
@@ -194,8 +195,9 @@ export class EvaluationRunner {
           );
 
           if (pwResult.failed) {
+            const failMsg = "FAILED to get results — analysis/articles not retrieved";
             console.error(
-              `[Runner] FAILED to get results for entry ${i} ("${entry.question.substring(0, 50)}") — skipping storage`
+              `[Runner] ${failMsg} for entry ${i} ("${entry.question.substring(0, 50)}")`
             );
 
             this.emitProgress(runId, {
@@ -205,8 +207,26 @@ export class EvaluationRunner {
               currentQuestion: i + 1,
               totalQuestions: entries.length,
               currentEntry: entry.question.substring(0, 80),
-              error: "FAILED to get results — analysis/articles not retrieved",
+              error: failMsg,
             });
+
+            const errorResult = await EvaluationResult.create({
+              orgId: new Types.ObjectId(orgId),
+              runId: new Types.ObjectId(runId),
+              entryIndex: i,
+              question: entry.question,
+              expectedAnswer: entry.expectedAnswer,
+              actualAnswer: pwResult.actualAnswer || "",
+              language: entry.language,
+              category: entry.category,
+              topic: entry.topic,
+              resultType: "error" as ResultType,
+              errorMessage: failMsg,
+              searchKnowledge: pwResult.searchKnowledge,
+              retrievedArticles: [],
+              responseTimeMs: pwResult.responseTimeMs,
+            });
+            allResults.push(errorResult);
 
             await EvaluationRun.findByIdAndUpdate(runId, {
               progress,
@@ -239,6 +259,9 @@ export class EvaluationRunner {
             retrievedArticles: judgeArticles,
           });
 
+          const kqScore = judgeScores.knowledgeQuality?.score ?? 5;
+          const resultType: ResultType = kqScore <= 2 ? "knowledge_gap" : "scored";
+
           const result = await EvaluationResult.create({
             orgId: new Types.ObjectId(orgId),
             runId: new Types.ObjectId(runId),
@@ -249,6 +272,7 @@ export class EvaluationRunner {
             language: entry.language,
             category: entry.category,
             topic: entry.topic,
+            resultType,
             judgeScores,
             searchKnowledge: pwResult.searchKnowledge,
             retrievedArticles: judgeArticles,
@@ -274,7 +298,7 @@ export class EvaluationRunner {
         } catch (entryError) {
           const errMsg = entryError instanceof Error ? entryError.message : String(entryError);
           console.error(
-            `[Runner] FAILED to get results for entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg} — skipping storage`
+            `[Runner] Error for entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg}`
           );
 
           this.emitProgress(runId, {
@@ -286,6 +310,24 @@ export class EvaluationRunner {
             currentEntry: entry.question.substring(0, 80),
             error: errMsg,
           });
+
+          const errorResult = await EvaluationResult.create({
+            orgId: new Types.ObjectId(orgId),
+            runId: new Types.ObjectId(runId),
+            entryIndex: i,
+            question: entry.question,
+            expectedAnswer: entry.expectedAnswer,
+            actualAnswer: "",
+            language: entry.language,
+            category: entry.category,
+            topic: entry.topic,
+            resultType: "error" as ResultType,
+            errorMessage: errMsg,
+            searchKnowledge: { queries: [], chunks: [] },
+            retrievedArticles: [],
+            responseTimeMs: 0,
+          });
+          allResults.push(errorResult);
 
           await EvaluationRun.findByIdAndUpdate(runId, {
             progress,
@@ -341,14 +383,18 @@ export class EvaluationRunner {
   private lastProgress = new Map<string, number>();
 
   private async computeSummary(runId: string): Promise<IRunSummary> {
-    const results = await EvaluationResult.find({
+    const allResults = await EvaluationResult.find({
       runId: new Types.ObjectId(runId),
     });
 
-    if (results.length === 0) {
+    const scored = allResults.filter(
+      (r) => (r.resultType ?? "scored") === "scored" && r.judgeScores
+    );
+
+    if (scored.length === 0) {
       return {
-        totalQuestions: 0,
-        completedQuestions: 0,
+        totalQuestions: allResults.length,
+        completedQuestions: allResults.length,
         avgCorrectness: 0,
         avgCompleteness: 0,
         avgRelevance: 0,
@@ -358,7 +404,7 @@ export class EvaluationRunner {
       };
     }
 
-    const total = results.length;
+    const total = scored.length;
     let sumCorrectness = 0;
     let sumCompleteness = 0;
     let sumRelevance = 0;
@@ -367,19 +413,20 @@ export class EvaluationRunner {
 
     const langMap: Record<string, { count: number; sumScore: number }> = {};
 
-    for (const r of results) {
-      sumCorrectness += r.judgeScores.correctness.score;
-      sumCompleteness += r.judgeScores.completeness.score;
-      sumRelevance += r.judgeScores.relevance.score;
-      sumFaithfulness += r.judgeScores.faithfulness.score;
-      sumOverall += r.judgeScores.overallScore;
+    for (const r of scored) {
+      const js = r.judgeScores!;
+      sumCorrectness += js.correctness.score;
+      sumCompleteness += js.completeness.score;
+      sumRelevance += js.relevance.score;
+      sumFaithfulness += js.faithfulness.score;
+      sumOverall += js.overallScore;
 
       const lang = r.language;
       if (!langMap[lang]) {
         langMap[lang] = { count: 0, sumScore: 0 };
       }
       langMap[lang].count++;
-      langMap[lang].sumScore += r.judgeScores.overallScore;
+      langMap[lang].sumScore += js.overallScore;
     }
 
     const byLanguage: IRunSummary["byLanguage"] = {};
@@ -393,8 +440,8 @@ export class EvaluationRunner {
     }
 
     return {
-      totalQuestions: total,
-      completedQuestions: total,
+      totalQuestions: allResults.length,
+      completedQuestions: allResults.length,
       avgCorrectness: parseFloat((sumCorrectness / total).toFixed(2)),
       avgCompleteness: parseFloat((sumCompleteness / total).toFixed(2)),
       avgRelevance: parseFloat((sumRelevance / total).toFixed(2)),

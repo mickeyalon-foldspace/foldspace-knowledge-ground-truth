@@ -1,10 +1,18 @@
 import mongoose, { Schema, Document, Types } from "mongoose";
 
+export interface IKnowledgeQuality {
+  score: number;
+  explanation: string;
+  gaps: string[];
+  improvements: string[];
+}
+
 export interface IJudgeScores {
   correctness: { score: number; explanation: string };
   completeness: { score: number; explanation: string };
   relevance: { score: number; explanation: string };
   faithfulness: { score: number; explanation: string };
+  knowledgeQuality?: IKnowledgeQuality;
   overallScore: number;
   detectedLanguage: string;
   languageMatch: boolean;
@@ -33,6 +41,8 @@ export interface IRetrievedArticle {
   }>;
 }
 
+export type ResultType = "scored" | "knowledge_gap" | "error";
+
 export interface IEvaluationResult extends Document {
   orgId: Types.ObjectId;
   runId: Types.ObjectId;
@@ -43,7 +53,9 @@ export interface IEvaluationResult extends Document {
   language: string;
   category?: string;
   topic?: string;
-  judgeScores: IJudgeScores;
+  resultType: ResultType;
+  errorMessage?: string;
+  judgeScores?: IJudgeScores;
   searchKnowledge: ISearchKnowledge;
   retrievedArticles: IRetrievedArticle[];
   responseTimeMs: number;
@@ -95,12 +107,23 @@ const retrievedArticleSchema = new Schema(
   { _id: false }
 );
 
+const knowledgeQualitySchema = new Schema(
+  {
+    score: { type: Number, min: 1, max: 5, default: 0 },
+    explanation: { type: String, default: "" },
+    gaps: { type: [String], default: [] },
+    improvements: { type: [String], default: [] },
+  },
+  { _id: false }
+);
+
 const judgeScoresSchema = new Schema<IJudgeScores>(
   {
     correctness: { type: judgeScoreDetail, required: true },
     completeness: { type: judgeScoreDetail, required: true },
     relevance: { type: judgeScoreDetail, required: true },
     faithfulness: { type: judgeScoreDetail, required: true },
+    knowledgeQuality: { type: knowledgeQualitySchema },
     overallScore: { type: Number, required: true },
     detectedLanguage: { type: String, required: true },
     languageMatch: { type: Boolean, required: true },
@@ -124,7 +147,13 @@ const evaluationResultSchema = new Schema<IEvaluationResult>(
     language: { type: String, required: true },
     category: { type: String },
     topic: { type: String },
-    judgeScores: { type: judgeScoresSchema, required: true },
+    resultType: {
+      type: String,
+      enum: ["scored", "knowledge_gap", "error"],
+      default: "scored",
+    },
+    errorMessage: { type: String },
+    judgeScores: { type: judgeScoresSchema },
     searchKnowledge: { type: searchKnowledgeSchema, default: { queries: [], chunks: [] } },
     retrievedArticles: { type: [retrievedArticleSchema], default: [] },
     responseTimeMs: { type: Number, required: true },

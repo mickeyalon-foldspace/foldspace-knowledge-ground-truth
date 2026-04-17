@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { EvaluationResult } from "../models/EvaluationResult.js";
+import { EvaluationRun } from "../models/EvaluationRun.js";
 import mongoose from "mongoose";
 
 const router = Router();
@@ -72,6 +73,10 @@ router.get("/run/:runId/stats", async (req: Request, res: Response) => {
         $match: {
           runId: new mongoose.Types.ObjectId(runId),
           orgId: new mongoose.Types.ObjectId(orgId.toString()),
+          $or: [
+            { resultType: "scored" },
+            { resultType: { $exists: false } },
+          ],
         },
       },
       {
@@ -106,6 +111,94 @@ router.get("/run/:runId/stats", async (req: Request, res: Response) => {
   }
 });
 
+async function recalculateRunSummary(runId: string, orgId: string) {
+  const allResults = await EvaluationResult.find({
+    runId: new mongoose.Types.ObjectId(runId),
+    orgId: new mongoose.Types.ObjectId(orgId),
+  });
+
+  const scored = allResults.filter(
+    (r) => (r.resultType ?? "scored") === "scored" && r.judgeScores
+  );
+
+  if (scored.length === 0) {
+    await EvaluationRun.findByIdAndUpdate(runId, {
+      summary: {
+        totalQuestions: allResults.length,
+        completedQuestions: allResults.length,
+        avgCorrectness: 0,
+        avgCompleteness: 0,
+        avgRelevance: 0,
+        avgFaithfulness: 0,
+        avgOverallScore: 0,
+        byLanguage: {},
+      },
+    });
+    return;
+  }
+
+  const total = scored.length;
+  let sumCorrectness = 0;
+  let sumCompleteness = 0;
+  let sumRelevance = 0;
+  let sumFaithfulness = 0;
+  let sumOverall = 0;
+  const langMap: Record<string, { count: number; sumScore: number }> = {};
+
+  for (const r of scored) {
+    const js = r.judgeScores!;
+    sumCorrectness += js.correctness.score;
+    sumCompleteness += js.completeness.score;
+    sumRelevance += js.relevance.score;
+    sumFaithfulness += js.faithfulness.score;
+    sumOverall += js.overallScore;
+    const lang = r.language;
+    if (!langMap[lang]) langMap[lang] = { count: 0, sumScore: 0 };
+    langMap[lang].count++;
+    langMap[lang].sumScore += js.overallScore;
+  }
+
+  const byLanguage: Record<string, { count: number; avgOverallScore: number }> = {};
+  for (const [lang, data] of Object.entries(langMap)) {
+    byLanguage[lang] = {
+      count: data.count,
+      avgOverallScore: parseFloat((data.sumScore / data.count).toFixed(2)),
+    };
+  }
+
+  await EvaluationRun.findByIdAndUpdate(runId, {
+    summary: {
+      totalQuestions: allResults.length,
+      completedQuestions: allResults.length,
+      avgCorrectness: parseFloat((sumCorrectness / total).toFixed(2)),
+      avgCompleteness: parseFloat((sumCompleteness / total).toFixed(2)),
+      avgRelevance: parseFloat((sumRelevance / total).toFixed(2)),
+      avgFaithfulness: parseFloat((sumFaithfulness / total).toFixed(2)),
+      avgOverallScore: parseFloat((sumOverall / total).toFixed(2)),
+      byLanguage,
+    },
+  });
+}
+
+router.delete("/:id", async (req: Request, res: Response) => {
+  try {
+    const result = await EvaluationResult.findOneAndDelete({
+      _id: paramValue(req, "id"),
+      orgId: req.user!.orgId,
+    });
+    if (!result) {
+      res.status(404).json({ error: "Result not found" });
+      return;
+    }
+
+    await recalculateRunSummary(result.runId.toString(), req.user!.orgId.toString());
+
+    res.json({ message: "Result deleted", runId: result.runId.toString() });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete result" });
+  }
+});
+
 router.get("/run/:runId/export-csv", async (req: Request, res: Response) => {
   try {
     const runId = paramValue(req, "runId");
@@ -130,6 +223,8 @@ router.get("/run/:runId/export-csv", async (req: Request, res: Response) => {
 
     const headers = [
       "#",
+      "Result Type",
+      "Error Message",
       "Question",
       "Expected Answer",
       "Actual Answer",
@@ -144,6 +239,10 @@ router.get("/run/:runId/export-csv", async (req: Request, res: Response) => {
       "Relevance Explanation",
       "Faithfulness",
       "Faithfulness Explanation",
+      "Knowledge Quality",
+      "Knowledge Quality Explanation",
+      "Knowledge Gaps",
+      "Knowledge Improvements",
       "Overall Score",
       "Language Match",
       "Detected Language",
@@ -151,30 +250,40 @@ router.get("/run/:runId/export-csv", async (req: Request, res: Response) => {
       "Chunk Titles",
     ];
 
-    const rows = results.map((r) => [
-      String(r.entryIndex + 1),
-      escapeCsv(r.question),
-      escapeCsv(r.expectedAnswer),
-      escapeCsv(r.actualAnswer),
-      r.language,
-      r.category || "",
-      r.topic || "",
-      String(r.judgeScores.correctness.score),
-      escapeCsv(r.judgeScores.correctness.explanation),
-      String(r.judgeScores.completeness.score),
-      escapeCsv(r.judgeScores.completeness.explanation),
-      String(r.judgeScores.relevance.score),
-      escapeCsv(r.judgeScores.relevance.explanation),
-      String(r.judgeScores.faithfulness.score),
-      escapeCsv(r.judgeScores.faithfulness.explanation),
-      String(r.judgeScores.overallScore),
-      r.judgeScores.languageMatch ? "Yes" : "No",
-      r.judgeScores.detectedLanguage || "",
-      String(r.searchKnowledge?.chunks?.length || 0),
-      escapeCsv(
-        (r.searchKnowledge?.chunks || []).map((c) => c.title).join(" | ")
-      ),
-    ]);
+    const rows = results.map((r) => {
+      const js = r.judgeScores;
+      const kq = js?.knowledgeQuality;
+      return [
+        String(r.entryIndex + 1),
+        r.resultType ?? "scored",
+        escapeCsv(r.errorMessage || ""),
+        escapeCsv(r.question),
+        escapeCsv(r.expectedAnswer),
+        escapeCsv(r.actualAnswer),
+        r.language,
+        r.category || "",
+        r.topic || "",
+        js ? String(js.correctness.score) : "",
+        js ? escapeCsv(js.correctness.explanation) : "",
+        js ? String(js.completeness.score) : "",
+        js ? escapeCsv(js.completeness.explanation) : "",
+        js ? String(js.relevance.score) : "",
+        js ? escapeCsv(js.relevance.explanation) : "",
+        js ? String(js.faithfulness.score) : "",
+        js ? escapeCsv(js.faithfulness.explanation) : "",
+        String(kq?.score || ""),
+        escapeCsv(kq?.explanation || ""),
+        escapeCsv((kq?.gaps || []).join(" | ")),
+        escapeCsv((kq?.improvements || []).join(" | ")),
+        js ? String(js.overallScore) : "",
+        js ? (js.languageMatch ? "Yes" : "No") : "",
+        js?.detectedLanguage || "",
+        String(r.searchKnowledge?.chunks?.length || 0),
+        escapeCsv(
+          (r.searchKnowledge?.chunks || []).map((c) => c.title).join(" | ")
+        ),
+      ];
+    });
 
     const BOM = "\uFEFF";
     const csv = BOM + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");

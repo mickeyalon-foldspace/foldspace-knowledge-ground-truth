@@ -218,6 +218,12 @@ export async function getRunStats(runId: string) {
   return request<LanguageStat[]>(`/results/run/${runId}/stats`);
 }
 
+export async function deleteResult(id: string) {
+  return request<{ message: string; runId: string }>(`/results/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export async function exportRunCsv(runId: string): Promise<void> {
   const authHeaders = await getAuthHeaders();
   const res = await fetch(`${API_BASE}/results/run/${runId}/export-csv`, {
@@ -382,11 +388,19 @@ export interface JudgeScoreDetail {
   explanation: string;
 }
 
+export interface KnowledgeQuality {
+  score: number;
+  explanation: string;
+  gaps: string[];
+  improvements: string[];
+}
+
 export interface JudgeScores {
   correctness: JudgeScoreDetail;
   completeness: JudgeScoreDetail;
   relevance: JudgeScoreDetail;
   faithfulness: JudgeScoreDetail;
+  knowledgeQuality?: KnowledgeQuality;
   overallScore: number;
   detectedLanguage: string;
   languageMatch: boolean;
@@ -412,6 +426,8 @@ export interface RetrievedArticle {
   chunks: Array<{ content: string; metadata?: Record<string, unknown> }>;
 }
 
+export type ResultType = "scored" | "knowledge_gap" | "error";
+
 export interface EvaluationResultData {
   _id: string;
   runId: string;
@@ -422,7 +438,9 @@ export interface EvaluationResultData {
   language: string;
   category?: string;
   topic?: string;
-  judgeScores: JudgeScores;
+  resultType?: ResultType;
+  errorMessage?: string;
+  judgeScores?: JudgeScores;
   searchKnowledge?: SearchKnowledge;
   retrievedArticles: RetrievedArticle[];
   responseTimeMs: number;

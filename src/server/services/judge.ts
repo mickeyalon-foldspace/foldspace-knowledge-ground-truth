@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
-import { IJudgeScores, IRetrievedArticle } from "../models/EvaluationResult.js";
+import { IJudgeScores, IKnowledgeQuality, IRetrievedArticle } from "../models/EvaluationResult.js";
 
 interface JudgeInput {
   question: string;
@@ -34,12 +34,20 @@ You MUST evaluate across four criteria, each scored 1-5:
    - 3: Mostly faithful but includes some unsupported statements
    - 5: Fully grounded in the retrieved knowledge sources
 
+5. **Knowledge Quality** (1-5): Do the retrieved knowledge articles/chunks contain sufficient, accurate, and up-to-date information to correctly and completely answer this question?
+   - 1: No relevant knowledge retrieved, or retrieved content is wrong/outdated
+   - 3: Some relevant content retrieved, but key information is missing or incomplete
+   - 5: Retrieved knowledge fully covers all information needed to answer correctly
+   You MUST also provide:
+   - "gaps": a list of specific topics or pieces of information that are MISSING from the retrieved knowledge but are needed to answer the question correctly. Compare the expected answer against the retrieved chunks to find what is not covered. If the knowledge is sufficient, return an empty array.
+   - "improvements": a list of concrete, actionable suggestions to improve the knowledge base. Examples: "Create an article explaining X", "Update the article titled 'Y' to include Z", "Add step-by-step instructions for the W workflow". If no improvements are needed, return an empty array.
+
 You must also:
 - Detect the language of the actual response
 - Check if the response language matches the expected language for the question
 - Provide a brief explanation for each score
 
-IMPORTANT: You are multilingual. Evaluate answers in whatever language they are written. The question, expected answer, and actual answer may all be in the same non-English language. Evaluate them in that language's context.
+IMPORTANT: You are multilingual. Evaluate answers in whatever language they are written. The question, expected answer, and actual answer may all be in the same non-English language. Evaluate them in that language's context. Write your explanations, gaps, and improvements in English.
 
 Respond ONLY with valid JSON in this exact format:
 {
@@ -47,6 +55,12 @@ Respond ONLY with valid JSON in this exact format:
   "completeness": { "score": <1-5>, "explanation": "<brief explanation>" },
   "relevance": { "score": <1-5>, "explanation": "<brief explanation>" },
   "faithfulness": { "score": <1-5>, "explanation": "<brief explanation>" },
+  "knowledgeQuality": {
+    "score": <1-5>,
+    "explanation": "<brief explanation of knowledge source quality>",
+    "gaps": ["<missing topic 1>", "<missing topic 2>"],
+    "improvements": ["<actionable suggestion 1>", "<actionable suggestion 2>"]
+  },
   "detectedLanguage": "<ISO 639-1 code, e.g. en, he, ar, fr>",
   "languageMatch": <true/false>
 }`;
@@ -105,7 +119,7 @@ export class JudgeService {
 
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system: JUDGE_SYSTEM_PROMPT,
       messages: [{ role: "user", content: userPrompt }],
     });
@@ -126,6 +140,14 @@ export class JudgeService {
 
     const parsed = JSON.parse(jsonMatch[1]);
 
+    const kq = parsed.knowledgeQuality;
+    const knowledgeQuality: IKnowledgeQuality = {
+      score: clampScore(kq?.score),
+      explanation: kq?.explanation || "",
+      gaps: Array.isArray(kq?.gaps) ? kq.gaps.filter((g: unknown) => typeof g === "string" && g) : [],
+      improvements: Array.isArray(kq?.improvements) ? kq.improvements.filter((s: unknown) => typeof s === "string" && s) : [],
+    };
+
     const scores: IJudgeScores = {
       correctness: {
         score: clampScore(parsed.correctness?.score),
@@ -143,6 +165,7 @@ export class JudgeService {
         score: clampScore(parsed.faithfulness?.score),
         explanation: parsed.faithfulness?.explanation || "",
       },
+      knowledgeQuality,
       overallScore: 0,
       detectedLanguage: parsed.detectedLanguage || input.language,
       languageMatch:
