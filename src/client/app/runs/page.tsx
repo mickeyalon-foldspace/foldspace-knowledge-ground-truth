@@ -770,35 +770,25 @@ export default function RunsPage() {
           </div>
         ) : (
           /* ---- CARD VIEW ---- */
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {tabRuns.map((run) => {
               const live = liveStates[run._id] || {};
               const isRunActive = run.status === "running" || run.status === "pending" || run.status === "failed";
               return (
-                <div key={run._id} className={`flex gap-3 ${isRunActive ? "" : "md:inline-flex md:w-auto"}`}>
-                  {isAdmin && (
-                    <div className="pt-4">
-                      <input
-                        type="checkbox"
-                        checked={selectedRunIds.has(run._id)}
-                        onChange={() => toggleRunSelection(run._id)}
-                        className="rounded border-gray-300"
-                      />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <RunCard
-                      run={run}
-                      stage={live.stage}
-                      currentQuestion={live.currentQuestion}
-                      totalQuestions={live.totalQuestions}
-                      currentEntry={live.currentEntry}
-                      liveLogLines={liveLogs[run._id]}
-                      onView={(id) => router.push(`/runs/${id}`)}
-                      onDelete={isAdmin ? handleDelete : undefined}
-                      onCancel={isAdmin ? handleCancel : undefined}
-                    />
-                  </div>
+                <div key={run._id} className={isRunActive ? "lg:col-span-2" : ""}>
+                  <RunCard
+                    run={run}
+                    stage={live.stage}
+                    currentQuestion={live.currentQuestion}
+                    totalQuestions={live.totalQuestions}
+                    currentEntry={live.currentEntry}
+                    liveLogLines={liveLogs[run._id]}
+                    selected={selectedRunIds.has(run._id)}
+                    onSelect={isAdmin ? toggleRunSelection : undefined}
+                    onView={(id) => router.push(`/runs/${id}`)}
+                    onDelete={isAdmin ? handleDelete : undefined}
+                    onCancel={isAdmin ? handleCancel : undefined}
+                  />
                 </div>
               );
             })}

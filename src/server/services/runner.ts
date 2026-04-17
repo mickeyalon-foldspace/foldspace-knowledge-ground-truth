@@ -274,7 +274,7 @@ export class EvaluationRunner {
         } catch (entryError) {
           const errMsg = entryError instanceof Error ? entryError.message : String(entryError);
           console.error(
-            `[Runner] Error entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg}`
+            `[Runner] FAILED to get results for entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg} — skipping storage`
           );
 
           this.emitProgress(runId, {
@@ -284,45 +284,12 @@ export class EvaluationRunner {
             currentQuestion: i + 1,
             totalQuestions: entries.length,
             currentEntry: entry.question.substring(0, 80),
-            error:
-              entryError instanceof Error
-                ? entryError.message
-                : String(entryError),
+            error: errMsg,
           });
 
-          await EvaluationResult.create({
-            orgId: new Types.ObjectId(orgId),
-            runId: new Types.ObjectId(runId),
-            entryIndex: i,
-            question: entry.question,
-            expectedAnswer: entry.expectedAnswer,
-            actualAnswer: `ERROR: ${entryError instanceof Error ? entryError.message : String(entryError)}`,
-            language: entry.language,
-            category: entry.category,
-            topic: entry.topic,
-            judgeScores: {
-              correctness: {
-                score: 1,
-                explanation: "Failed to process this question",
-              },
-              completeness: {
-                score: 1,
-                explanation: "Failed to process this question",
-              },
-              relevance: {
-                score: 1,
-                explanation: "Failed to process this question",
-              },
-              faithfulness: {
-                score: 1,
-                explanation: "Failed to process this question",
-              },
-              overallScore: 1,
-              detectedLanguage: entry.language,
-              languageMatch: false,
-            },
-            retrievedArticles: [],
-            responseTimeMs: 0,
+          await EvaluationRun.findByIdAndUpdate(runId, {
+            progress,
+            playwrightLog: this.playwrightEngine.getLogs(),
           });
         }
       }

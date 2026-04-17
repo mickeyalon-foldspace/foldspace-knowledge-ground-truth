@@ -10,16 +10,18 @@ interface RunCardProps {
   totalQuestions?: number;
   currentEntry?: string;
   liveLogLines?: string[];
+  selected?: boolean;
+  onSelect?: (id: string) => void;
   onView: (runId: string) => void;
   onDelete?: (runId: string) => void;
   onCancel?: (runId: string) => void;
 }
 
 const statusStyles: Record<string, string> = {
-  pending: "bg-gray-100 text-gray-800",
-  running: "bg-blue-100 text-blue-800 animate-pulse",
-  completed: "bg-green-100 text-green-800",
-  failed: "bg-red-100 text-red-800",
+  pending: "bg-gray-100 text-gray-700",
+  running: "bg-blue-100 text-blue-700 animate-pulse",
+  completed: "bg-emerald-50 text-emerald-700",
+  failed: "bg-red-50 text-red-700",
 };
 
 const STAGE_LABELS: Record<string, { label: string; icon: string }> = {
@@ -43,25 +45,31 @@ const STAGE_LABELS: Record<string, { label: string; icon: string }> = {
   error: { label: "Error", icon: "💥" },
 };
 
-function scoreColor(score: number): string {
-  if (score >= 4) return "text-green-600";
-  if (score >= 3) return "text-yellow-600";
-  if (score >= 2) return "text-orange-500";
-  return "text-red-600";
+const FAILURE_PATTERN = /FAILED|TIMEOUT|ERROR|failed|error|timed?\s*out/i;
+
+function isFailureLine(line: string): boolean {
+  return FAILURE_PATTERN.test(line);
 }
 
-function scoreBgColor(score: number): string {
-  if (score >= 4) return "bg-green-50 border-green-200";
-  if (score >= 3) return "bg-yellow-50 border-yellow-200";
+function scoreColor(score: number): string {
+  if (score >= 4) return "text-emerald-600";
+  if (score >= 3) return "text-amber-600";
+  if (score >= 2) return "text-orange-500";
+  return "text-red-500";
+}
+
+function scoreBg(score: number): string {
+  if (score >= 4) return "bg-emerald-50 border-emerald-200";
+  if (score >= 3) return "bg-amber-50 border-amber-200";
   if (score >= 2) return "bg-orange-50 border-orange-200";
   return "bg-red-50 border-red-200";
 }
 
-function overallScoreBg(score: number): string {
-  if (score >= 4) return "from-green-500 to-emerald-600";
-  if (score >= 3) return "from-yellow-500 to-amber-600";
+function overallGradient(score: number): string {
+  if (score >= 4) return "from-emerald-500 to-green-600";
+  if (score >= 3) return "from-amber-500 to-yellow-600";
   if (score >= 2) return "from-orange-500 to-orange-600";
-  return "from-red-500 to-red-600";
+  return "from-red-500 to-rose-600";
 }
 
 function LogTerminal({
@@ -84,7 +92,7 @@ function LogTerminal({
   return (
     <div
       ref={ref}
-      className="overflow-y-auto bg-gray-950 text-green-400 text-xs font-mono p-3 rounded border border-gray-700"
+      className="overflow-y-auto bg-gray-950 text-green-400 text-xs font-mono p-3 rounded-lg border border-gray-700"
       style={{ maxHeight }}
     >
       {lines.length === 0 ? (
@@ -93,7 +101,10 @@ function LogTerminal({
         </div>
       ) : (
         lines.map((line, i) => (
-          <div key={i} className="whitespace-pre-wrap leading-5 py-px">
+          <div
+            key={i}
+            className={`whitespace-pre-wrap leading-5 py-px ${isFailureLine(line) ? "text-red-400 font-semibold" : ""}`}
+          >
             {line}
           </div>
         ))
@@ -158,7 +169,10 @@ function LogModal({
             </div>
           ) : (
             lines.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap leading-6 py-px">
+              <div
+                key={i}
+                className={`whitespace-pre-wrap leading-6 py-px ${isFailureLine(line) ? "text-red-400 font-semibold" : ""}`}
+              >
                 {line}
               </div>
             ))
@@ -179,6 +193,8 @@ export default function RunCard({
   totalQuestions,
   currentEntry,
   liveLogLines,
+  selected,
+  onSelect,
   onView,
   onDelete,
   onCancel,
@@ -196,67 +212,83 @@ export default function RunCard({
   return (
     <>
       <div
-        className={`bg-white rounded-lg border p-4 transition-shadow ${
+        className={`bg-white rounded-xl border transition-all ${
           isActive
-            ? "border-blue-300 shadow-sm"
-            : "border-gray-200 hover:shadow-md"
+            ? "border-blue-200 shadow-sm ring-1 ring-blue-100"
+            : selected
+              ? "border-blue-400 shadow ring-1 ring-blue-200"
+              : "border-gray-200 hover:shadow-md hover:border-gray-300"
         }`}
       >
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <h3 className="text-sm font-semibold text-gray-900 truncate">
-                {run.goldenSetName}
-              </h3>
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusClass}`}
-              >
-                {run.status}
-              </span>
-            </div>
-            <p className="text-xs text-gray-500">
-              {run.agentName && (
-                <span className="font-medium text-gray-600">
-                  {run.agentName}
-                </span>
-              )}
-              {run.agentName && " · "}
-              Model: {run.judgeModel} ·{" "}
-              {new Date(run.createdAt).toLocaleString()}
-            </p>
-          </div>
+        {/* Top section: header + badges */}
+        <div className="p-4 pb-0">
+          <div className="flex items-start gap-3">
+            {/* Checkbox */}
+            {onSelect && (
+              <div className="pt-0.5 flex-shrink-0">
+                <input
+                  type="checkbox"
+                  checked={!!selected}
+                  onChange={() => onSelect(run._id)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+              </div>
+            )}
 
-          {/* Prominent eval count + overall score */}
-          {run.summary && (
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="flex flex-col items-center px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg">
-                <span className="text-2xl font-bold text-indigo-700 leading-none">
-                  {run.summary.completedQuestions}
-                </span>
-                <span className="text-[10px] font-medium text-indigo-500 uppercase tracking-wide mt-0.5">
-                  {run.summary.completedQuestions === 1 ? "eval" : "evals"}
+            {/* Title + meta */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <h3 className="text-sm font-semibold text-gray-900 truncate">
+                  {run.goldenSetName}
+                </h3>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${statusClass}`}
+                >
+                  {run.status}
                 </span>
               </div>
-              {hasOverallScore && (
-                <div
-                  className={`flex flex-col items-center px-3 py-1.5 rounded-lg bg-gradient-to-br ${overallScoreBg(run.summary!.avgOverallScore)} text-white min-w-[56px]`}
-                >
-                  <span className="text-2xl font-bold leading-none">
-                    {run.summary!.avgOverallScore.toFixed(1)}
+              <p className="text-xs text-gray-400 leading-relaxed">
+                {run.agentName && (
+                  <span className="text-gray-500">{run.agentName}</span>
+                )}
+                {run.agentName && <span className="mx-1.5 text-gray-300">|</span>}
+                {run.judgeModel}
+                <span className="mx-1.5 text-gray-300">|</span>
+                {new Date(run.createdAt).toLocaleString()}
+              </p>
+            </div>
+
+            {/* Eval count + overall score badges */}
+            {run.summary && (
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-col items-center justify-center w-14 h-14 bg-indigo-50 border border-indigo-100 rounded-xl">
+                  <span className="text-xl font-bold text-indigo-600 leading-none">
+                    {run.summary.completedQuestions}
                   </span>
-                  <span className="text-[10px] font-medium opacity-90 uppercase tracking-wide mt-0.5">
-                    score
+                  <span className="text-[9px] font-semibold text-indigo-400 uppercase tracking-wider mt-0.5">
+                    evals
                   </span>
                 </div>
-              )}
-            </div>
-          )}
+                {hasOverallScore && (
+                  <div
+                    className={`flex flex-col items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br ${overallGradient(run.summary!.avgOverallScore)} text-white shadow-sm`}
+                  >
+                    <span className="text-xl font-bold leading-none">
+                      {run.summary!.avgOverallScore.toFixed(1)}
+                    </span>
+                    <span className="text-[9px] font-semibold opacity-80 uppercase tracking-wider mt-0.5">
+                      score
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Live stage indicator */}
         {isActive && stageInfo && (
-          <div className="mt-3 p-2 bg-blue-50 rounded-md">
+          <div className="mx-4 mt-3 p-2.5 bg-blue-50 rounded-lg border border-blue-100">
             <div className="flex items-center gap-2 text-sm text-blue-800">
               <span>{stageInfo.icon}</span>
               <span className="font-medium">{stageInfo.label}</span>
@@ -267,7 +299,7 @@ export default function RunCard({
               </p>
             )}
             {currentEntry && (
-              <p className="text-xs text-blue-500 mt-0.5 truncate italic">
+              <p className="text-xs text-blue-400 mt-0.5 truncate italic">
                 &ldquo;{currentEntry}&rdquo;
               </p>
             )}
@@ -276,79 +308,81 @@ export default function RunCard({
 
         {/* Progress bar */}
         {run.status === "running" && (
-          <div className="mt-3">
-            <div className="flex justify-between text-xs text-gray-500 mb-1">
+          <div className="mx-4 mt-3">
+            <div className="flex justify-between text-xs text-gray-400 mb-1">
               <span>
                 {currentQuestion && totalQuestions
                   ? `${currentQuestion} / ${totalQuestions} questions`
                   : "Progress"}
               </span>
-              <span>{run.progress}%</span>
+              <span className="font-medium text-gray-600">{run.progress}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-100 rounded-full h-1.5">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
                 style={{ width: `${run.progress}%` }}
               />
             </div>
           </div>
         )}
 
-        {/* Completed scores — detailed breakdown */}
+        {/* Completed scores */}
         {run.summary && run.status === "completed" && (
-          <div className="mt-3 grid grid-cols-4 gap-2">
+          <div className="mx-4 mt-3 grid grid-cols-4 gap-1.5">
             {[
-              { label: "Correctness", value: run.summary.avgCorrectness },
-              { label: "Completeness", value: run.summary.avgCompleteness },
-              { label: "Relevance", value: run.summary.avgRelevance },
-              { label: "Faithfulness", value: run.summary.avgFaithfulness },
+              { label: "Correct", value: run.summary.avgCorrectness },
+              { label: "Complete", value: run.summary.avgCompleteness },
+              { label: "Relevant", value: run.summary.avgRelevance },
+              { label: "Faithful", value: run.summary.avgFaithfulness },
             ].map(({ label, value }) => (
               <div
                 key={label}
-                className={`text-center py-1.5 px-1 rounded-md border ${scoreBgColor(value)}`}
+                className={`text-center py-1.5 rounded-lg border ${scoreBg(value)}`}
               >
-                <div className={`text-lg font-semibold ${scoreColor(value)}`}>
+                <div className={`text-base font-bold ${scoreColor(value)}`}>
                   {value.toFixed(1)}
                 </div>
-                <div className="text-[10px] text-gray-500 font-medium">{label}</div>
+                <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider">{label}</div>
               </div>
             ))}
           </div>
         )}
 
         {run.error && (
-          <p className="mt-2 text-xs text-red-600">Error: {run.error}</p>
+          <p className="mx-4 mt-2 text-xs text-red-500 bg-red-50 rounded-lg px-2.5 py-1.5 border border-red-100">
+            {run.error}
+          </p>
         )}
 
         {/* Live log terminal */}
         {showLogPanel && (
-          <div className="mt-3">
+          <div className="mx-4 mt-3">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-semibold text-gray-700">
-                Playwright Log{" "}
+              <span className="text-xs font-semibold text-gray-600">
+                Playwright Log
                 {logLines.length > 0 && (
-                  <span className="text-gray-400">({logLines.length})</span>
+                  <span className="text-gray-300 ml-1">({logLines.length})</span>
                 )}
               </span>
               <button
                 onClick={() => setModalOpen(true)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                className="text-xs font-medium text-blue-500 hover:text-blue-700 hover:underline"
               >
-                Open Full Log
+                Full Log
               </button>
             </div>
             <LogTerminal lines={logLines} maxHeight="200px" />
           </div>
         )}
 
-        {/* Completed runs — log link */}
+        {/* Completed — log link */}
         {run.status === "completed" &&
           run.playwrightLog &&
           run.playwrightLog.length > 0 && (
-            <div className="mt-2">
+            <div className="mx-4 mt-2">
               <button
                 onClick={() => setModalOpen(true)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                className="text-xs font-medium text-gray-400 hover:text-blue-600 hover:underline transition-colors"
               >
                 View Playwright Log ({run.playwrightLog.length} lines)
               </button>
@@ -356,11 +390,11 @@ export default function RunCard({
           )}
 
         {/* Actions */}
-        <div className="mt-3 flex gap-2">
+        <div className="p-4 pt-3 flex gap-2">
           {run.status === "completed" && (
             <button
               onClick={() => onView(run._id)}
-              className="flex-1 text-xs bg-blue-600 text-white rounded px-3 py-1.5 hover:bg-blue-700 transition-colors"
+              className="flex-1 text-xs font-medium bg-blue-600 text-white rounded-lg px-3 py-2 hover:bg-blue-700 transition-colors"
             >
               View Results
             </button>
@@ -368,7 +402,7 @@ export default function RunCard({
           {run.status === "running" && onCancel && (
             <button
               onClick={() => onCancel(run._id)}
-              className="flex-1 text-xs bg-yellow-500 text-white rounded px-3 py-1.5 hover:bg-yellow-600 transition-colors"
+              className="flex-1 text-xs font-medium bg-amber-500 text-white rounded-lg px-3 py-2 hover:bg-amber-600 transition-colors"
             >
               Cancel
             </button>
@@ -376,7 +410,7 @@ export default function RunCard({
           {onDelete && (
             <button
               onClick={() => onDelete(run._id)}
-              className="text-xs text-red-600 border border-red-200 rounded px-3 py-1.5 hover:bg-red-50 transition-colors"
+              className="text-xs font-medium text-red-500 border border-red-200 rounded-lg px-3 py-2 hover:bg-red-50 transition-colors"
             >
               Delete
             </button>
