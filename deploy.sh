@@ -65,17 +65,56 @@ if command -v docker &>/dev/null; then
   fi
 fi
 
-# ── 6. Restart services ──────────────────────────────────────────────
-# Stop existing processes
+# ── 6. Stop existing services ────────────────────────────────────────
 log "Stopping existing processes..."
 
-if command -v pm2 &>/dev/null; then
-  # PM2 is available — use it for process management
-  log "Using PM2 for process management."
+SERVER_PORT=3001
+CLIENT_PORT=3000
 
+wait_for_port_free() {
+  local port=$1
+  local max_wait=20
+  for i in $(seq 1 $max_wait); do
+    if ! lsof -i :"$port" -t >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  log "WARNING: Port $port still in use after ${max_wait}s — force-killing."
+  lsof -i :"$port" -t 2>/dev/null | xargs kill -9 2>/dev/null || true
+  sleep 2
+}
+
+if command -v pm2 &>/dev/null; then
+  log "Using PM2 for process management."
+  pm2 stop ground-truth-server 2>/dev/null || true
+  pm2 stop ground-truth-client 2>/dev/null || true
   pm2 delete ground-truth-server 2>/dev/null || true
   pm2 delete ground-truth-client 2>/dev/null || true
+else
+  log "PM2 not found — using PID files."
+  PID_DIR="$APP_DIR/.pids"
+  mkdir -p "$PID_DIR"
 
+  for svc in server client; do
+    if [[ -f "$PID_DIR/$svc.pid" ]]; then
+      OLD_PID=$(cat "$PID_DIR/$svc.pid")
+      if kill -0 "$OLD_PID" 2>/dev/null; then
+        log "Stopping old $svc (PID $OLD_PID)..."
+        kill "$OLD_PID" 2>/dev/null || true
+      fi
+      rm -f "$PID_DIR/$svc.pid"
+    fi
+  done
+fi
+
+log "Waiting for ports to free up..."
+wait_for_port_free $SERVER_PORT
+wait_for_port_free $CLIENT_PORT
+log "Ports $SERVER_PORT and $CLIENT_PORT are free."
+
+# ── 7. Start services ───────────────────────────────────────────────
+if command -v pm2 &>/dev/null; then
   log "Starting server with PM2..."
   pm2 start dist/server/index.js --name ground-truth-server 2>&1 | tee -a "$LOG_FILE"
 
@@ -84,58 +123,40 @@ if command -v pm2 &>/dev/null; then
 
   pm2 save 2>&1 | tee -a "$LOG_FILE"
 else
-  # Fallback: plain background processes with PID files
-  log "PM2 not found — using PID files."
-
   PID_DIR="$APP_DIR/.pids"
-  mkdir -p "$PID_DIR"
 
-  # Kill old server
-  if [[ -f "$PID_DIR/server.pid" ]]; then
-    OLD_PID=$(cat "$PID_DIR/server.pid")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
-      log "Killing old server (PID $OLD_PID)..."
-      kill "$OLD_PID" 2>/dev/null || true
-      sleep 2
-      kill -9 "$OLD_PID" 2>/dev/null || true
-    fi
-    rm -f "$PID_DIR/server.pid"
-  fi
-
-  # Kill old client
-  if [[ -f "$PID_DIR/client.pid" ]]; then
-    OLD_PID=$(cat "$PID_DIR/client.pid")
-    if kill -0 "$OLD_PID" 2>/dev/null; then
-      log "Killing old client (PID $OLD_PID)..."
-      kill "$OLD_PID" 2>/dev/null || true
-      sleep 2
-      kill -9 "$OLD_PID" 2>/dev/null || true
-    fi
-    rm -f "$PID_DIR/client.pid"
-  fi
-
-  # Start server
   log "Starting server..."
   nohup node dist/server/index.js >> "$APP_DIR/server.log" 2>&1 &
   echo $! > "$PID_DIR/server.pid"
   log "Server started (PID $(cat "$PID_DIR/server.pid"))."
 
-  # Start client
   log "Starting client..."
-  nohup npx next start src/client --port 3000 >> "$APP_DIR/client.log" 2>&1 &
+  nohup npm run start:client >> "$APP_DIR/client.log" 2>&1 &
   echo $! > "$PID_DIR/client.pid"
   log "Client started (PID $(cat "$PID_DIR/client.pid"))."
 fi
 
-# ── 7. Health check ──────────────────────────────────────────────────
+# ── 8. Health check ──────────────────────────────────────────────────
 log "Waiting for server to come up..."
-for i in $(seq 1 15); do
-  if curl -sf http://localhost:3001/api/health >/dev/null 2>&1; then
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:$SERVER_PORT/api/health >/dev/null 2>&1; then
     log "Server is healthy."
     break
   fi
-  if [[ $i -eq 15 ]]; then
-    log "WARNING: Server health check failed after 15 attempts."
+  if [[ $i -eq 30 ]]; then
+    log "WARNING: Server health check failed after 30 attempts."
+  fi
+  sleep 2
+done
+
+log "Waiting for client to come up..."
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:$CLIENT_PORT >/dev/null 2>&1; then
+    log "Client is healthy."
+    break
+  fi
+  if [[ $i -eq 30 ]]; then
+    log "WARNING: Client health check failed after 30 attempts."
   fi
   sleep 2
 done

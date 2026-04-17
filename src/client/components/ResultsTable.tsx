@@ -117,20 +117,20 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-center" title={`Correctness: ${result.judgeScores?.correctness.score ?? 0}/5`}>
-                    <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} />
+                  <td className="px-4 py-3 text-center">
+                    <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} title={`Correctness: ${result.judgeScores?.correctness.score ?? 0}/5`} />
                   </td>
-                  <td className="px-4 py-3 text-center" title={`Completeness: ${result.judgeScores?.completeness.score ?? 0}/5`}>
-                    <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} />
+                  <td className="px-4 py-3 text-center">
+                    <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} title={`Completeness: ${result.judgeScores?.completeness.score ?? 0}/5`} />
                   </td>
-                  <td className="px-4 py-3 text-center" title={`Relevance: ${result.judgeScores?.relevance.score ?? 0}/5`}>
-                    <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} />
+                  <td className="px-4 py-3 text-center">
+                    <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} title={`Relevance: ${result.judgeScores?.relevance.score ?? 0}/5`} />
                   </td>
-                  <td className="px-4 py-3 text-center" title={`Faithfulness: ${result.judgeScores?.faithfulness.score ?? 0}/5`}>
-                    <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} />
+                  <td className="px-4 py-3 text-center">
+                    <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} title={`Faithfulness: ${result.judgeScores?.faithfulness.score ?? 0}/5`} />
                   </td>
-                  <td className="px-4 py-3 text-center" title={`Overall Score: ${result.judgeScores?.overallScore ?? 0}/5`}>
-                    <ScoreBadge score={result.judgeScores?.overallScore ?? 0} />
+                  <td className="px-4 py-3 text-center">
+                    <ScoreBadge score={result.judgeScores?.overallScore ?? 0} title={`Overall: ${result.judgeScores?.overallScore ?? 0}/5`} />
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
                     {(result.searchKnowledge?.chunks?.length || 0) > 0 ? (

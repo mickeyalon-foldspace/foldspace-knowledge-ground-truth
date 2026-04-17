@@ -81,7 +81,7 @@ export function LanguageBarChart({ data }: LanguageBarChartProps) {
   );
 }
 
-export function ScoreBadge({ score }: { score: number }) {
+export function ScoreBadge({ score, title }: { score: number; title?: string }) {
   let color = "bg-red-100 text-red-800";
   if (score >= 4) color = "bg-green-100 text-green-800";
   else if (score >= 3) color = "bg-yellow-100 text-yellow-800";
@@ -90,6 +90,7 @@ export function ScoreBadge({ score }: { score: number }) {
   return (
     <span
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}
+      title={title}
     >
       {score.toFixed(1)}
     </span>

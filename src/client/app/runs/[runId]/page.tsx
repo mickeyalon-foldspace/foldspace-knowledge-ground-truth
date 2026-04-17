@@ -109,7 +109,7 @@ export default function RunDetailPage() {
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              {exporting ? "Exporting..." : "Export CSV for Google Sheets"}
+              {exporting ? "Downloading..." : "Download CSV"}
             </button>
           )}
         </div>
@@ -356,6 +356,7 @@ export default function RunDetailPage() {
                           <th className="px-4 py-3 text-center text-xs font-medium text-amber-700 uppercase tracking-wider">KQ Score</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Knowledge Gaps</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Suggested Improvements</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Retrieved Articles</th>
                           {handleDeleteResult && (
                             <th className="px-4 py-3 w-10"></th>
                           )}
@@ -408,6 +409,20 @@ export default function RunDetailPage() {
                                   </ul>
                                 ) : (
                                   <span className="text-gray-400">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-xs text-gray-700 max-w-[250px]">
+                                {r.searchKnowledge?.chunks && r.searchKnowledge.chunks.length > 0 ? (
+                                  <ul className="space-y-1">
+                                    {r.searchKnowledge.chunks.map((chunk, ci) => (
+                                      <li key={ci} className="flex items-start gap-1">
+                                        <span className="text-blue-400 mt-px flex-shrink-0">&#x25CF;</span>
+                                        <span className="truncate" title={chunk.title}>{chunk.title}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <span className="text-gray-400">No articles retrieved</span>
                                 )}
                               </td>
                               {handleDeleteResult && (
