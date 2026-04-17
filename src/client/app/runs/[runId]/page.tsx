@@ -417,7 +417,20 @@ export default function RunDetailPage() {
                                     {r.searchKnowledge.chunks.map((chunk, ci) => (
                                       <li key={ci} className="flex items-start gap-1">
                                         <span className="text-blue-400 mt-px flex-shrink-0">&#x25CF;</span>
-                                        <span className="truncate" title={chunk.title}>{chunk.title}</span>
+                                        {chunk.url ? (
+                                          <a
+                                            href={chunk.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-blue-600 hover:text-blue-800 hover:underline truncate"
+                                            title={chunk.title}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            {chunk.title}
+                                          </a>
+                                        ) : (
+                                          <span className="truncate" title={chunk.title}>{chunk.title}</span>
+                                        )}
                                       </li>
                                     ))}
                                   </ul>

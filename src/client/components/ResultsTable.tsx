@@ -68,7 +68,7 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
               Overall
             </th>
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Chunks
+              Articles
             </th>
             {onDelete && (
               <th className="px-4 py-3 w-10"></th>
@@ -81,6 +81,9 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
             const isRtl = isRtlLanguage(result.language);
             const isDeleting = deletingId === result._id;
             const colCount = onDelete ? 11 : 10;
+            const uniqueArticles = new Set(
+              (result.searchKnowledge?.chunks || []).map((c) => c.title)
+            );
 
             return (
               <Fragment key={result._id}>
@@ -118,24 +121,24 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
                     )}
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} title={`Correctness: ${result.judgeScores?.correctness.score ?? 0}/5`} />
+                    <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} label="Correctness" />
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} title={`Completeness: ${result.judgeScores?.completeness.score ?? 0}/5`} />
+                    <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} label="Completeness" />
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} title={`Relevance: ${result.judgeScores?.relevance.score ?? 0}/5`} />
+                    <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} label="Relevance" />
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} title={`Faithfulness: ${result.judgeScores?.faithfulness.score ?? 0}/5`} />
+                    <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} label="Faithfulness" />
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.overallScore ?? 0} title={`Overall: ${result.judgeScores?.overallScore ?? 0}/5`} />
+                    <ScoreBadge score={result.judgeScores?.overallScore ?? 0} label="Overall" />
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
-                    {(result.searchKnowledge?.chunks?.length || 0) > 0 ? (
+                    {uniqueArticles.size > 0 ? (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
-                        {result.searchKnowledge!.chunks.length}
+                        {uniqueArticles.size}
                       </span>
                     ) : (
                       <span className="text-gray-300">0</span>

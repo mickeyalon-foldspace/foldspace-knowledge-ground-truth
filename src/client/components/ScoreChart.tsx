@@ -81,18 +81,32 @@ export function LanguageBarChart({ data }: LanguageBarChartProps) {
   );
 }
 
-export function ScoreBadge({ score, title }: { score: number; title?: string }) {
+export function ScoreBadge({ score, label }: { score: number; label?: string }) {
   let color = "bg-red-100 text-red-800";
   if (score >= 4) color = "bg-green-100 text-green-800";
   else if (score >= 3) color = "bg-yellow-100 text-yellow-800";
   else if (score >= 2) color = "bg-orange-100 text-orange-800";
 
+  if (!label) {
+    return (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}
+      >
+        {score.toFixed(1)}
+      </span>
+    );
+  }
+
   return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}
-      title={title}
-    >
-      {score.toFixed(1)}
+    <span className="relative group inline-flex">
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${color}`}
+      >
+        {score.toFixed(1)}
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">
+        {label}
+      </span>
     </span>
   );
 }
