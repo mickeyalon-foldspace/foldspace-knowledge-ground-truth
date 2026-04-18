@@ -1,17 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ResultsTable from "@/components/ResultsTable";
 import { ScoreRadar, LanguageBarChart } from "@/components/ScoreChart";
-import { getRun, getRunResults, getRunStats, exportRunCsv, deleteResult } from "@/lib/api";
+import {
+  getRun,
+  getRunResults,
+  getRunStats,
+  exportRunCsv,
+  deleteResult,
+  getScoreProfiles,
+  assignScoreProfileToRun,
+  retryResults,
+  subscribeToRunProgress,
+  ALL_SCORE_CRITERIA,
+} from "@/lib/api";
+import { isRtlLanguage } from "@/lib/rtl";
 import type {
   EvaluationRunData,
   EvaluationResultData,
   LanguageStat,
+  ScoreProfile,
+  ScoreCriterion,
+  RunProgress,
 } from "@/lib/api";
 
 type ResultTab = "scored" | "knowledge_gap" | "error";
@@ -28,20 +43,28 @@ export default function RunDetailPage() {
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [exporting, setExporting] = useState(false);
   const [resultTab, setResultTab] = useState<ResultTab>("scored");
+  const [profiles, setProfiles] = useState<ScoreProfile[]>([]);
+  const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(new Set());
+  const [retrying, setRetrying] = useState(false);
+  const [retryProgress, setRetryProgress] = useState<RunProgress | null>(null);
+  const retryUnsubRef = useRef<(() => void) | null>(null);
+  const [expandedGapRow, setExpandedGapRow] = useState<string | null>(null);
 
   const fetchData = async () => {
     try {
-      const [runData, resultsData, statsData] = await Promise.all([
+      const [runData, resultsData, statsData, profilesData] = await Promise.all([
         getRun(runId),
         getRunResults(runId, {
           language: filterLang || undefined,
           category: filterCategory || undefined,
         }),
         getRunStats(runId),
+        getScoreProfiles().catch(() => [] as ScoreProfile[]),
       ]);
       setRun(runData);
       setResults(resultsData);
       setStats(statsData);
+      setProfiles(profilesData);
     } catch (e) {
       console.error(e);
     } finally {
@@ -53,14 +76,126 @@ export default function RunDetailPage() {
     fetchData();
   }, [runId, filterLang, filterCategory]);
 
+  useEffect(() => {
+    return () => {
+      if (retryUnsubRef.current) retryUnsubRef.current();
+    };
+  }, []);
+
   const handleDeleteResult = async (resultId: string) => {
     await deleteResult(resultId);
     await fetchData();
   };
 
+  const activeProfile: ScoreProfile | null = useMemo(() => {
+    if (!profiles.length) return null;
+    if (run?.scoreProfileId) {
+      const match = profiles.find((p) => p._id === run.scoreProfileId);
+      if (match) return match;
+    }
+    return profiles.find((p) => p.isDefault) ?? profiles[0];
+  }, [profiles, run?.scoreProfileId]);
+
+  const enabledCriteria: ScoreCriterion[] = activeProfile
+    ? activeProfile.enabledCriteria
+    : ALL_SCORE_CRITERIA;
+
+  const handleProfileChange = async (profileId: string) => {
+    try {
+      await assignScoreProfileToRun(runId, profileId);
+      await fetchData();
+    } catch (e) {
+      console.error("Failed to change profile:", e);
+    }
+  };
+
   const scoredResults = results.filter((r) => (r.resultType ?? "scored") === "scored");
   const knowledgeGapResults = results.filter((r) => r.resultType === "knowledge_gap");
   const errorResults = results.filter((r) => r.resultType === "error");
+
+  // Recompute display-side averages based on selected enabledCriteria
+  const displayAverages = useMemo(() => {
+    if (scoredResults.length === 0 || enabledCriteria.length === 0) {
+      return {
+        overall: null as number | null,
+        byCriterion: {
+          correctness: 0,
+          completeness: 0,
+          relevance: 0,
+          faithfulness: 0,
+        },
+      };
+    }
+    const sums = { correctness: 0, completeness: 0, relevance: 0, faithfulness: 0 };
+    let overallSum = 0;
+    let overallCount = 0;
+    for (const r of scoredResults) {
+      if (!r.judgeScores) continue;
+      sums.correctness += r.judgeScores.correctness.score;
+      sums.completeness += r.judgeScores.completeness.score;
+      sums.relevance += r.judgeScores.relevance.score;
+      sums.faithfulness += r.judgeScores.faithfulness.score;
+      let rowSum = 0;
+      for (const c of enabledCriteria) rowSum += r.judgeScores[c].score;
+      overallSum += rowSum / enabledCriteria.length;
+      overallCount += 1;
+    }
+    const n = scoredResults.length;
+    return {
+      overall: overallCount ? overallSum / overallCount : null,
+      byCriterion: {
+        correctness: sums.correctness / n,
+        completeness: sums.completeness / n,
+        relevance: sums.relevance / n,
+        faithfulness: sums.faithfulness / n,
+      },
+    };
+  }, [scoredResults, enabledCriteria]);
+
+  const toggleResultSelection = (id: string) => {
+    setSelectedResultIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllErrors = () => {
+    if (selectedResultIds.size === errorResults.length && errorResults.length > 0) {
+      setSelectedResultIds(new Set());
+    } else {
+      setSelectedResultIds(new Set(errorResults.map((r) => r._id)));
+    }
+  };
+
+  const handleRetrySelected = async () => {
+    if (selectedResultIds.size === 0) return;
+    setRetrying(true);
+    setRetryProgress(null);
+    try {
+      const unsub = subscribeToRunProgress(runId, (data) => {
+        setRetryProgress(data);
+        if (data.status === "completed" || data.status === "failed") {
+          setTimeout(async () => {
+            setRetrying(false);
+            setSelectedResultIds(new Set());
+            await fetchData();
+            setRetryProgress(null);
+          }, 400);
+        }
+      });
+      retryUnsubRef.current = unsub;
+      await retryResults(runId, Array.from(selectedResultIds));
+    } catch (e) {
+      console.error("Retry failed:", e);
+      setRetrying(false);
+      if (retryUnsubRef.current) {
+        retryUnsubRef.current();
+        retryUnsubRef.current = null;
+      }
+    }
+  };
 
   const languages = [...new Set(results.map((r) => r.language))];
   const categories = [
@@ -152,10 +287,51 @@ export default function RunDetailPage() {
                 <div>
                   <span className="text-gray-500">Overall Score</span>
                   <p className="font-medium text-lg">
-                    {run.summary?.avgOverallScore?.toFixed(2) || "N/A"}
+                    {displayAverages.overall !== null
+                      ? displayAverages.overall.toFixed(2)
+                      : "N/A"}
                     <span className="text-xs text-gray-400"> / 5</span>
                   </p>
                 </div>
+              </div>
+              <div className="mt-4 pt-3 border-t flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Score Profile:</span>
+                  <select
+                    value={activeProfile?._id ?? ""}
+                    onChange={(e) => handleProfileChange(e.target.value)}
+                    disabled={profiles.length === 0}
+                    className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                  >
+                    {profiles.length === 0 && (
+                      <option value="">(none)</option>
+                    )}
+                    {profiles.map((p) => (
+                      <option key={p._id} value={p._id}>
+                        {p.name}
+                        {p.isDefault ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <Link
+                    href="/settings/score-profiles"
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    Manage
+                  </Link>
+                </div>
+                {activeProfile && (
+                  <div className="flex flex-wrap gap-1">
+                    {activeProfile.enabledCriteria.map((c) => (
+                      <span
+                        key={c}
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 capitalize"
+                      >
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -167,10 +343,11 @@ export default function RunDetailPage() {
                     Score Breakdown
                   </h2>
                   <ScoreRadar
-                    correctness={run.summary.avgCorrectness}
-                    completeness={run.summary.avgCompleteness}
-                    relevance={run.summary.avgRelevance}
-                    faithfulness={run.summary.avgFaithfulness}
+                    correctness={displayAverages.byCriterion.correctness}
+                    completeness={displayAverages.byCriterion.completeness}
+                    relevance={displayAverages.byCriterion.relevance}
+                    faithfulness={displayAverages.byCriterion.faithfulness}
+                    enabledCriteria={enabledCriteria}
                   />
                 </div>
                 {langChartData.length > 0 && (
@@ -336,7 +513,11 @@ export default function RunDetailPage() {
             {/* Scored tab */}
             {resultTab === "scored" && (
               <div className="bg-white rounded-lg border overflow-hidden">
-                <ResultsTable results={scoredResults} onDelete={handleDeleteResult} />
+                <ResultsTable
+                  results={scoredResults}
+                  onDelete={handleDeleteResult}
+                  enabledCriteria={enabledCriteria}
+                />
               </div>
             )}
 
@@ -350,10 +531,22 @@ export default function RunDetailPage() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-amber-50">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Question</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Expected Answer</th>
-                          <th className="px-4 py-3 text-center text-xs font-medium text-amber-700 uppercase tracking-wider">KQ Score</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider w-12">#</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider w-[22%]">Question</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider w-[22%]">Expected Answer</th>
+                          <th
+                            className="px-4 py-3 text-center text-xs font-medium text-amber-700 uppercase tracking-wider w-24"
+                            title="Knowledge Quality — how well the retrieved articles cover the expected answer (1 = poor, 5 = excellent)"
+                          >
+                            <span className="relative group inline-flex items-center gap-1 cursor-help">
+                              Knowledge
+                              <br />
+                              Quality
+                              <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1 whitespace-nowrap rounded bg-gray-900 px-2 py-1 text-[11px] font-normal normal-case text-white opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                How well the retrieved articles cover the expected answer (1–5)
+                              </span>
+                            </span>
+                          </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Knowledge Gaps</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Suggested Improvements</th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-amber-700 uppercase tracking-wider">Retrieved Articles</th>
@@ -365,22 +558,69 @@ export default function RunDetailPage() {
                       <tbody className="bg-white divide-y divide-gray-200">
                         {knowledgeGapResults.map((r) => {
                           const kq = r.judgeScores?.knowledgeQuality;
+                          const isRtl = isRtlLanguage(r.language);
+                          const kqScore = kq?.score;
+                          const kqColor =
+                            kqScore === undefined
+                              ? "bg-gray-100 text-gray-600"
+                              : kqScore >= 4
+                              ? "bg-green-100 text-green-700"
+                              : kqScore >= 3
+                              ? "bg-yellow-100 text-yellow-700"
+                              : "bg-red-100 text-red-700";
+                          const isExpanded = expandedGapRow === r._id;
+                          const gapColCount = handleDeleteResult ? 8 : 7;
                           return (
-                            <tr key={r._id} className="hover:bg-amber-50/30">
-                              <td className="px-4 py-3 text-sm text-gray-500">{r.entryIndex + 1}</td>
-                              <td className="px-4 py-3 text-sm text-gray-900 max-w-[220px]">
-                                <div className="truncate" title={r.question}>{r.question}</div>
+                            <Fragment key={r._id}>
+                            <tr
+                              className="hover:bg-amber-50/30 align-top cursor-pointer"
+                              onClick={() =>
+                                setExpandedGapRow(isExpanded ? null : r._id)
+                              }
+                            >
+                              <td className="px-4 py-3 text-sm text-gray-500">
+                                <div className="flex items-center gap-1">
+                                  <svg
+                                    className={`w-3 h-3 text-gray-400 transition-transform ${
+                                      isExpanded ? "rotate-90" : ""
+                                    }`}
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                  {r.entryIndex + 1}
+                                </div>
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px]">
-                                <div className="truncate" title={r.expectedAnswer}>
-                                  {r.expectedAnswer.length > 60
-                                    ? r.expectedAnswer.substring(0, 60) + "..."
-                                    : r.expectedAnswer}
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                <div
+                                  className="whitespace-pre-wrap break-words leading-snug"
+                                  dir={isRtl ? "rtl" : "ltr"}
+                                  title={r.question}
+                                >
+                                  {r.question}
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-400 uppercase">
+                                  {r.language}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                <div
+                                  className="whitespace-pre-wrap break-words leading-snug"
+                                  dir={isRtl ? "rtl" : "ltr"}
+                                  title={r.expectedAnswer}
+                                >
+                                  {r.expectedAnswer}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-center">
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                                  {kq?.score ?? "—"}/5
+                                <span
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${kqColor}`}
+                                  title="Knowledge Quality score (1 = poor, 5 = excellent)"
+                                >
+                                  {kqScore ?? "—"}/5
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-xs text-amber-900 max-w-[250px]">
@@ -441,7 +681,10 @@ export default function RunDetailPage() {
                               {handleDeleteResult && (
                                 <td className="px-2 py-3 text-center">
                                   <button
-                                    onClick={() => handleDeleteResult(r._id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteResult(r._id);
+                                    }}
                                     className="p-1 text-gray-300 hover:text-red-500 transition-colors"
                                     title="Delete this result"
                                   >
@@ -452,6 +695,53 @@ export default function RunDetailPage() {
                                 </td>
                               )}
                             </tr>
+                            {isExpanded && (
+                              <tr className="bg-amber-50/40">
+                                <td colSpan={gapColCount} className="px-4 py-4">
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    <div>
+                                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                                        Agent Answer
+                                      </h4>
+                                      <div
+                                        className="text-sm text-gray-800 bg-white border border-gray-200 rounded p-3 whitespace-pre-wrap break-words"
+                                        dir={isRtl ? "rtl" : "ltr"}
+                                      >
+                                        {r.actualAnswer?.trim() ? (
+                                          r.actualAnswer
+                                        ) : (
+                                          <span className="text-gray-400 italic">
+                                            (empty)
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                                        Expected Answer
+                                      </h4>
+                                      <div
+                                        className="text-sm text-gray-800 bg-white border border-gray-200 rounded p-3 whitespace-pre-wrap break-words"
+                                        dir={isRtl ? "rtl" : "ltr"}
+                                      >
+                                        {r.expectedAnswer}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {kq?.explanation && (
+                                    <div className="mt-4">
+                                      <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+                                        Knowledge Quality — Judge Explanation
+                                      </h4>
+                                      <div className="text-sm text-gray-700 bg-white border border-amber-200 rounded p-3">
+                                        {kq.explanation}
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                            </Fragment>
                           );
                         })}
                       </tbody>
@@ -467,35 +757,91 @@ export default function RunDetailPage() {
                 {errorResults.length === 0 ? (
                   <p className="text-sm text-gray-500 text-center py-8">No error results.</p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-red-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">#</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">Question</th>
-                          <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">Error Message</th>
-                          {handleDeleteResult && (
+                  <>
+                    <div className="flex items-center justify-between px-4 py-3 bg-red-50/50 border-b">
+                      <div className="text-sm text-gray-600">
+                        {selectedResultIds.size > 0
+                          ? `${selectedResultIds.size} selected`
+                          : `${errorResults.length} error${errorResults.length === 1 ? "" : "s"}`}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {retrying && retryProgress && (
+                          <div className="flex items-center gap-2 mr-2">
+                            <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-blue-500 transition-all"
+                                style={{ width: `${Math.max(0, Math.min(100, retryProgress.progress || 0))}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              {retryProgress.stage || "running"} ({retryProgress.progress || 0}%)
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          onClick={handleRetrySelected}
+                          disabled={selectedResultIds.size === 0 || retrying}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                          {retrying
+                            ? "Retrying..."
+                            : `Retry Selected${selectedResultIds.size > 0 ? ` (${selectedResultIds.size})` : ""}`}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-red-50">
+                          <tr>
+                            <th className="px-4 py-3 w-10">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 text-blue-600 rounded"
+                                checked={
+                                  errorResults.length > 0 &&
+                                  selectedResultIds.size === errorResults.length
+                                }
+                                onChange={toggleSelectAllErrors}
+                                disabled={retrying}
+                                aria-label="Select all"
+                              />
+                            </th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">#</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">Question</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-red-700 uppercase tracking-wider">Error Message</th>
                             <th className="px-4 py-3 w-10"></th>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {errorResults.map((r) => (
-                          <tr key={r._id} className="hover:bg-red-50/30">
-                            <td className="px-4 py-3 text-sm text-gray-500">{r.entryIndex + 1}</td>
-                            <td className="px-4 py-3 text-sm text-gray-900 max-w-[300px]">
-                              <div className="truncate" title={r.question}>{r.question}</div>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-red-700 max-w-[400px]">
-                              <div className="whitespace-pre-wrap break-words">
-                                {r.errorMessage || r.actualAnswer || "Unknown error"}
-                              </div>
-                            </td>
-                            {handleDeleteResult && (
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {errorResults.map((r) => (
+                            <tr key={r._id} className="hover:bg-red-50/30">
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 text-blue-600 rounded"
+                                  checked={selectedResultIds.has(r._id)}
+                                  onChange={() => toggleResultSelection(r._id)}
+                                  disabled={retrying}
+                                  aria-label="Select row"
+                                />
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-500">{r.entryIndex + 1}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900 max-w-[300px]">
+                                <div className="truncate" title={r.question}>{r.question}</div>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-red-700 max-w-[400px]">
+                                <div className="whitespace-pre-wrap break-words">
+                                  {r.errorMessage || r.actualAnswer || "Unknown error"}
+                                </div>
+                              </td>
                               <td className="px-2 py-3 text-center">
                                 <button
                                   onClick={() => handleDeleteResult(r._id)}
-                                  className="p-1 text-gray-300 hover:text-red-500 transition-colors"
+                                  disabled={retrying}
+                                  className="p-1 text-gray-300 hover:text-red-500 transition-colors disabled:opacity-30"
                                   title="Delete this result"
                                 >
                                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -503,12 +849,12 @@ export default function RunDetailPage() {
                                   </svg>
                                 </button>
                               </td>
-                            )}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             )}

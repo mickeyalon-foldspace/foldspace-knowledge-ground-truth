@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import mongoose from "mongoose";
 import { EvaluationRun } from "../models/EvaluationRun.js";
 import { EvaluationResult } from "../models/EvaluationResult.js";
+import { ScoreProfile } from "../models/ScoreProfile.js";
 import { evaluationRunner, runnerEvents } from "../services/runner.js";
 import { requireRole } from "../middleware/auth.js";
 
@@ -154,6 +155,94 @@ router.get("/:id/progress", (req: Request, res: Response) => {
     runnerEvents.removeListener("progress", onProgress);
   });
 });
+
+router.put(
+  "/:id/score-profile",
+  requireRole("admin"),
+  async (req: Request, res: Response) => {
+    try {
+      const id = paramId(req);
+      if (!isValidObjectId(id)) {
+        res.status(400).json({ error: "Invalid run id" });
+        return;
+      }
+      const { scoreProfileId } = req.body as { scoreProfileId?: string | null };
+      const orgId = req.user!.orgId;
+
+      let profileObjectId: mongoose.Types.ObjectId | null = null;
+      if (scoreProfileId) {
+        if (!isValidObjectId(scoreProfileId)) {
+          res.status(400).json({ error: "Invalid scoreProfileId" });
+          return;
+        }
+        const profile = await ScoreProfile.findOne({
+          _id: scoreProfileId,
+          orgId,
+        });
+        if (!profile) {
+          res.status(404).json({ error: "Score profile not found" });
+          return;
+        }
+        profileObjectId = profile._id as mongoose.Types.ObjectId;
+      }
+
+      const run = await EvaluationRun.findOneAndUpdate(
+        { _id: id, orgId },
+        { scoreProfileId: profileObjectId ?? undefined },
+        { new: true }
+      );
+      if (!run) {
+        res.status(404).json({ error: "Run not found" });
+        return;
+      }
+      res.json(run);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to assign score profile" });
+    }
+  }
+);
+
+router.post(
+  "/:id/retry-results",
+  requireRole("admin"),
+  async (req: Request, res: Response) => {
+    try {
+      const id = paramId(req);
+      if (!isValidObjectId(id)) {
+        res.status(400).json({ error: "Invalid run id" });
+        return;
+      }
+      const { resultIds } = req.body as { resultIds?: string[] };
+      if (!Array.isArray(resultIds) || resultIds.length === 0) {
+        res.status(400).json({ error: "resultIds array is required" });
+        return;
+      }
+      const validResultIds = resultIds.filter(isValidObjectId);
+      if (validResultIds.length === 0) {
+        res.status(400).json({ error: "No valid result IDs provided" });
+        return;
+      }
+
+      const orgId = req.user!.orgId;
+      const run = await EvaluationRun.findOne({ _id: id, orgId });
+      if (!run) {
+        res.status(404).json({ error: "Run not found" });
+        return;
+      }
+
+      await evaluationRunner.retryEntries(
+        id,
+        validResultIds,
+        orgId.toString()
+      );
+
+      res.json({ message: "Retry started", count: validResultIds.length });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: `Retry failed: ${msg}` });
+    }
+  }
+);
 
 router.delete(
   "/:id",

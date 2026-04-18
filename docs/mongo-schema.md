@@ -144,6 +144,7 @@ Model: `EvaluationRun` — `src/server/models/EvaluationRun.ts`
 | `status`        | String   | no       | `"pending"` | Enum: `pending`, `running`, `completed`, `failed`|
 | `progress`      | Number   | no       | `0`         | 0–100                                            |
 | `judgeModel`    | String   | yes      |             | e.g. `claude-sonnet-4-20250514`               |
+| `scoreProfileId`| ObjectId | no       |             | Ref → `ScoreProfile`; when absent, the org's default profile applies |
 | `startedAt`     | Date     | no       |             |                                                  |
 | `completedAt`   | Date     | no       |             |                                                  |
 | `error`         | String   | no       |             | Error message if status=failed                   |
@@ -245,6 +246,33 @@ Model: `EvaluationResult` — `src/server/models/EvaluationResult.ts`
 
 ---
 
+### 8. `scoreprofiles`
+
+Model: `ScoreProfile` — `src/server/models/ScoreProfile.ts`
+
+Named profiles that control which criteria contribute to the "overall" score displayed in the UI. Score calculation happens on the fly from stored per-criterion scores — editing a profile changes displayed numbers but never mutates `judgeScores` or `summary` in Mongo.
+
+| Field             | Type     | Required | Default                                                | Notes                                                            |
+|-------------------|----------|----------|--------------------------------------------------------|------------------------------------------------------------------|
+| `_id`             | ObjectId | auto     |                                                        |                                                                  |
+| `orgId`           | ObjectId | yes      |                                                        | Ref → `Organization`                                            |
+| `name`            | String   | yes      |                                                        | Trimmed; unique per org                                          |
+| `enabledCriteria` | [String] | no       | `["correctness", "completeness", "relevance"]`        | Subset of `correctness`, `completeness`, `relevance`, `faithfulness` |
+| `isDefault`       | Boolean  | no       | `false`                                                | At most one per org                                              |
+| `createdAt`       | Date     | auto     |                                                        | Mongoose timestamp                                               |
+| `updatedAt`       | Date     | auto     |                                                        | Mongoose timestamp                                               |
+
+**Seeding:** On first `GET /score-profiles` call (or run-page fetch) for an org, a "Without Faithfulness" profile with `enabledCriteria: ["correctness", "completeness", "relevance"]` and `isDefault: true` is auto-created.
+
+**Indexes:**
+| Fields              | Type    | Source                                    |
+|---------------------|---------|-------------------------------------------|
+| `_id`               | Primary | MongoDB default                           |
+| `orgId + name`      | Unique  | Schema `index({ orgId, name }, unique)`   |
+| `orgId + isDefault` | Compound| Schema `index({ orgId, isDefault })`      |
+
+---
+
 ## Index Summary (all collections)
 
 | Collection          | Field(s)       | Type      | Declared In           |
@@ -258,6 +286,9 @@ Model: `EvaluationResult` — `src/server/models/EvaluationResult.ts`
 | `evaluationruns`    | `_id`          | Primary   | MongoDB default       |
 | `evaluationresults` | `_id`          | Primary   | MongoDB default       |
 | `evaluationresults` | `runId`        | Secondary | Schema `index: true`  |
+| `scoreprofiles`     | `_id`          | Primary   | MongoDB default       |
+| `scoreprofiles`     | `orgId + name` | Unique    | Schema compound index |
+| `scoreprofiles`     | `orgId + isDefault` | Compound | Schema compound index |
 
 ---
 
@@ -269,3 +300,5 @@ Model: `EvaluationResult` — `src/server/models/EvaluationResult.ts`
 | 2026-04-16 | `evaluationresults` | Added `errorMessage` (optional String)                                 |
 | 2026-04-16 | `evaluationresults` | Changed `judgeScores` from required to optional                        |
 | 2026-04-16 | `evaluationresults` | Added embedded `knowledgeQuality` sub-doc inside `judgeScores`         |
+| 2026-04-16 | `scoreprofiles`     | New collection: named score-criteria profiles (org-scoped)             |
+| 2026-04-16 | `evaluationruns`    | Added `scoreProfileId` (optional Ref → ScoreProfile)                  |

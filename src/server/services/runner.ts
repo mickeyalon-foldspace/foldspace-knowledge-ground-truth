@@ -180,160 +180,16 @@ export class EvaluationRunner {
         const progress = Math.round(((i + 1) / entries.length) * 100);
         this.lastProgress.set(runId, progress);
 
-        this.emitProgress(runId, {
-          status: "running",
-          progress,
-          stage: "prompting_agent",
-          currentQuestion: i + 1,
-          totalQuestions: entries.length,
-          currentEntry: entry.question.substring(0, 80),
-        });
-
-        try {
-          const pwResult = await this.playwrightEngine.askQuestion(
-            entry.question
-          );
-
-          if (pwResult.failed) {
-            const failMsg = "FAILED to get results — analysis/articles not retrieved";
-            console.error(
-              `[Runner] ${failMsg} for entry ${i} ("${entry.question.substring(0, 50)}")`
-            );
-
-            this.emitProgress(runId, {
-              status: "running",
-              progress,
-              stage: "question_failed_no_results",
-              currentQuestion: i + 1,
-              totalQuestions: entries.length,
-              currentEntry: entry.question.substring(0, 80),
-              error: failMsg,
-            });
-
-            const errorResult = await EvaluationResult.create({
-              orgId: new Types.ObjectId(orgId),
-              runId: new Types.ObjectId(runId),
-              entryIndex: i,
-              question: entry.question,
-              expectedAnswer: entry.expectedAnswer,
-              actualAnswer: pwResult.actualAnswer || "",
-              language: entry.language,
-              category: entry.category,
-              topic: entry.topic,
-              resultType: "error" as ResultType,
-              errorMessage: failMsg,
-              searchKnowledge: pwResult.searchKnowledge,
-              retrievedArticles: [],
-              responseTimeMs: pwResult.responseTimeMs,
-            });
-            allResults.push(errorResult);
-
-            await EvaluationRun.findByIdAndUpdate(runId, {
-              progress,
-              playwrightLog: this.playwrightEngine.getLogs(),
-            });
-            continue;
-          }
-
-          this.emitProgress(runId, {
-            status: "running",
-            progress,
-            stage: "judging_response",
-            currentQuestion: i + 1,
-            totalQuestions: entries.length,
-            currentEntry: entry.question.substring(0, 80),
-          });
-
-          // Convert chunks to the format the judge expects
-          const judgeArticles = pwResult.searchKnowledge.chunks.map((c) => ({
-            title: c.title,
-            chunkCount: 1,
-            chunks: [{ content: c.content, metadata: {} }],
-          }));
-
-          const judgeScores = await this.judgeService.evaluate({
-            question: entry.question,
-            expectedAnswer: entry.expectedAnswer,
-            actualAnswer: pwResult.actualAnswer,
-            language: entry.language,
-            retrievedArticles: judgeArticles,
-          });
-
-          const kqScore = judgeScores.knowledgeQuality?.score ?? 5;
-          const resultType: ResultType = kqScore <= 2 ? "knowledge_gap" : "scored";
-
-          const result = await EvaluationResult.create({
-            orgId: new Types.ObjectId(orgId),
-            runId: new Types.ObjectId(runId),
-            entryIndex: i,
-            question: entry.question,
-            expectedAnswer: entry.expectedAnswer,
-            actualAnswer: pwResult.actualAnswer,
-            language: entry.language,
-            category: entry.category,
-            topic: entry.topic,
-            resultType,
-            judgeScores,
-            searchKnowledge: pwResult.searchKnowledge,
-            retrievedArticles: judgeArticles,
-            responseTimeMs: pwResult.responseTimeMs,
-            rawApiResponses: pwResult.rawApiResponses,
-          });
-
-          allResults.push(result);
-
-          this.emitProgress(runId, {
-            status: "running",
-            progress,
-            stage: "question_complete",
-            currentQuestion: i + 1,
-            totalQuestions: entries.length,
-            currentEntry: entry.question.substring(0, 80),
-          });
-
-          await EvaluationRun.findByIdAndUpdate(runId, {
-            progress,
-            playwrightLog: this.playwrightEngine.getLogs(),
-          });
-        } catch (entryError) {
-          const errMsg = entryError instanceof Error ? entryError.message : String(entryError);
-          console.error(
-            `[Runner] Error for entry ${i} ("${entry.question.substring(0, 50)}"): ${errMsg}`
-          );
-
-          this.emitProgress(runId, {
-            status: "running",
-            progress,
-            stage: "question_error",
-            currentQuestion: i + 1,
-            totalQuestions: entries.length,
-            currentEntry: entry.question.substring(0, 80),
-            error: errMsg,
-          });
-
-          const errorResult = await EvaluationResult.create({
-            orgId: new Types.ObjectId(orgId),
-            runId: new Types.ObjectId(runId),
-            entryIndex: i,
-            question: entry.question,
-            expectedAnswer: entry.expectedAnswer,
-            actualAnswer: "",
-            language: entry.language,
-            category: entry.category,
-            topic: entry.topic,
-            resultType: "error" as ResultType,
-            errorMessage: errMsg,
-            searchKnowledge: { queries: [], chunks: [] },
-            retrievedArticles: [],
-            responseTimeMs: 0,
-          });
-          allResults.push(errorResult);
-
-          await EvaluationRun.findByIdAndUpdate(runId, {
-            progress,
-            playwrightLog: this.playwrightEngine.getLogs(),
-          });
-        }
+        const result = await this.processEntry(
+          runId,
+          orgId,
+          entry,
+          i,
+          i + 1,
+          entries.length,
+          progress
+        );
+        allResults.push(result);
       }
 
       this.emitProgress(runId, {
@@ -381,6 +237,333 @@ export class EvaluationRunner {
   }
 
   private lastProgress = new Map<string, number>();
+
+  private async processEntry(
+    runId: string,
+    orgId: string,
+    entry: IGoldenSetEntry,
+    entryIndex: number,
+    currentQuestion: number,
+    totalQuestions: number,
+    progress: number
+  ): Promise<IEvaluationResult> {
+    this.emitProgress(runId, {
+      status: "running",
+      progress,
+      stage: "prompting_agent",
+      currentQuestion,
+      totalQuestions,
+      currentEntry: entry.question.substring(0, 80),
+    });
+
+    try {
+      const pwResult = await this.playwrightEngine.askQuestion(entry.question);
+
+      if (pwResult.failed) {
+        const failMsg =
+          "FAILED to get results — analysis/articles not retrieved";
+        console.error(
+          `[Runner] ${failMsg} for entry ${entryIndex} ("${entry.question.substring(0, 50)}")`
+        );
+
+        this.emitProgress(runId, {
+          status: "running",
+          progress,
+          stage: "question_failed_no_results",
+          currentQuestion,
+          totalQuestions,
+          currentEntry: entry.question.substring(0, 80),
+          error: failMsg,
+        });
+
+        const errorResult = await EvaluationResult.create({
+          orgId: new Types.ObjectId(orgId),
+          runId: new Types.ObjectId(runId),
+          entryIndex,
+          question: entry.question,
+          expectedAnswer: entry.expectedAnswer,
+          actualAnswer: pwResult.actualAnswer || "",
+          language: entry.language,
+          category: entry.category,
+          topic: entry.topic,
+          resultType: "error" as ResultType,
+          errorMessage: failMsg,
+          searchKnowledge: pwResult.searchKnowledge,
+          retrievedArticles: [],
+          responseTimeMs: pwResult.responseTimeMs,
+        });
+
+        await EvaluationRun.findByIdAndUpdate(runId, {
+          progress,
+          playwrightLog: this.playwrightEngine.getLogs(),
+        });
+        return errorResult;
+      }
+
+      this.emitProgress(runId, {
+        status: "running",
+        progress,
+        stage: "judging_response",
+        currentQuestion,
+        totalQuestions,
+        currentEntry: entry.question.substring(0, 80),
+      });
+
+      const judgeArticles = pwResult.searchKnowledge.chunks.map((c) => ({
+        title: c.title,
+        chunkCount: 1,
+        chunks: [{ content: c.content, metadata: {} }],
+      }));
+
+      const judgeScores = await this.judgeService.evaluate({
+        question: entry.question,
+        expectedAnswer: entry.expectedAnswer,
+        actualAnswer: pwResult.actualAnswer,
+        language: entry.language,
+        retrievedArticles: judgeArticles,
+      });
+
+      const kqScore = judgeScores.knowledgeQuality?.score ?? 5;
+      const resultType: ResultType = kqScore <= 2 ? "knowledge_gap" : "scored";
+
+      const result = await EvaluationResult.create({
+        orgId: new Types.ObjectId(orgId),
+        runId: new Types.ObjectId(runId),
+        entryIndex,
+        question: entry.question,
+        expectedAnswer: entry.expectedAnswer,
+        actualAnswer: pwResult.actualAnswer,
+        language: entry.language,
+        category: entry.category,
+        topic: entry.topic,
+        resultType,
+        judgeScores,
+        searchKnowledge: pwResult.searchKnowledge,
+        retrievedArticles: judgeArticles,
+        responseTimeMs: pwResult.responseTimeMs,
+        rawApiResponses: pwResult.rawApiResponses,
+      });
+
+      this.emitProgress(runId, {
+        status: "running",
+        progress,
+        stage: "question_complete",
+        currentQuestion,
+        totalQuestions,
+        currentEntry: entry.question.substring(0, 80),
+      });
+
+      await EvaluationRun.findByIdAndUpdate(runId, {
+        progress,
+        playwrightLog: this.playwrightEngine.getLogs(),
+      });
+      return result;
+    } catch (entryError) {
+      const errMsg =
+        entryError instanceof Error ? entryError.message : String(entryError);
+      console.error(
+        `[Runner] Error for entry ${entryIndex} ("${entry.question.substring(0, 50)}"): ${errMsg}`
+      );
+
+      this.emitProgress(runId, {
+        status: "running",
+        progress,
+        stage: "question_error",
+        currentQuestion,
+        totalQuestions,
+        currentEntry: entry.question.substring(0, 80),
+        error: errMsg,
+      });
+
+      const errorResult = await EvaluationResult.create({
+        orgId: new Types.ObjectId(orgId),
+        runId: new Types.ObjectId(runId),
+        entryIndex,
+        question: entry.question,
+        expectedAnswer: entry.expectedAnswer,
+        actualAnswer: "",
+        language: entry.language,
+        category: entry.category,
+        topic: entry.topic,
+        resultType: "error" as ResultType,
+        errorMessage: errMsg,
+        searchKnowledge: { queries: [], chunks: [] },
+        retrievedArticles: [],
+        responseTimeMs: 0,
+      });
+
+      await EvaluationRun.findByIdAndUpdate(runId, {
+        progress,
+        playwrightLog: this.playwrightEngine.getLogs(),
+      });
+      return errorResult;
+    }
+  }
+
+  async retryEntries(
+    runId: string,
+    resultIds: string[],
+    orgId: string
+  ): Promise<void> {
+    const run = await EvaluationRun.findOne({
+      _id: new Types.ObjectId(runId),
+      orgId: new Types.ObjectId(orgId),
+    });
+    if (!run) {
+      throw new Error("Run not found");
+    }
+
+    const errorResults = await EvaluationResult.find({
+      _id: { $in: resultIds.map((id) => new Types.ObjectId(id)) },
+      runId: new Types.ObjectId(runId),
+      orgId: new Types.ObjectId(orgId),
+    });
+
+    if (errorResults.length === 0) {
+      throw new Error("No matching results to retry");
+    }
+
+    for (const r of errorResults) {
+      if ((r.resultType ?? "scored") !== "error") {
+        throw new Error(
+          `Result ${r._id} is not an error result and cannot be retried`
+        );
+      }
+    }
+
+    const agent = await Agent.findById(run.agentId);
+    if (!agent) {
+      throw new Error("Agent for this run no longer exists");
+    }
+
+    const agentCreds: AgentCredentials = {
+      url: agent.url,
+      apiBaseUrl: agent.apiBaseUrl,
+      backendUrl: agent.backendUrl || "",
+      username: agent.username,
+      password: agent.password,
+    };
+
+    void this.executeRetry(runId, orgId, errorResults, agentCreds).catch(
+      (err) => {
+        console.error(`[Runner] Retry for run ${runId} failed:`, err);
+      }
+    );
+  }
+
+  private async executeRetry(
+    runId: string,
+    orgId: string,
+    errorResults: IEvaluationResult[],
+    agentCreds: AgentCredentials
+  ): Promise<void> {
+    const controller = new AbortController();
+    this.abortControllers.set(runId, controller);
+
+    try {
+      await EvaluationRun.findByIdAndUpdate(runId, {
+        status: "running",
+        progress: 0,
+      });
+      this.emitProgress(runId, {
+        status: "running",
+        progress: 0,
+        stage: "retry_initializing",
+        totalQuestions: errorResults.length,
+      });
+
+      this.playwrightEngine.clearLogs();
+      this.playwrightEngine.setStageCallback((stage) => {
+        this.emitProgress(runId, {
+          status: "running",
+          progress: this.lastProgress.get(runId) || 0,
+          stage,
+          totalQuestions: errorResults.length,
+        });
+      });
+      this.playwrightEngine.setLogCallback((line) => {
+        this.emitProgress(runId, {
+          status: "running",
+          progress: this.lastProgress.get(runId) || 0,
+          logLine: line,
+          totalQuestions: errorResults.length,
+        });
+      });
+
+      await this.playwrightEngine.initialize();
+      await this.playwrightEngine.login(agentCreds);
+      await this.playwrightEngine.navigateToPlayground();
+
+      const resultIds = errorResults.map((r) => r._id);
+      await EvaluationResult.deleteMany({
+        _id: { $in: resultIds },
+        runId: new Types.ObjectId(runId),
+      });
+
+      for (let i = 0; i < errorResults.length; i++) {
+        if (controller.signal.aborted) break;
+        const original = errorResults[i];
+        const progress = Math.round(((i + 1) / errorResults.length) * 100);
+        this.lastProgress.set(runId, progress);
+
+        const entry: IGoldenSetEntry = {
+          question: original.question,
+          expectedAnswer: original.expectedAnswer,
+          language: original.language,
+          category: original.category,
+          topic: original.topic,
+        };
+
+        await this.processEntry(
+          runId,
+          orgId,
+          entry,
+          original.entryIndex,
+          i + 1,
+          errorResults.length,
+          progress
+        );
+      }
+
+      this.emitProgress(runId, {
+        status: "running",
+        progress: 99,
+        stage: "computing_summary",
+        totalQuestions: errorResults.length,
+      });
+
+      const summary = await this.computeSummary(runId);
+      await EvaluationRun.findByIdAndUpdate(runId, {
+        status: "completed",
+        progress: 100,
+        completedAt: new Date(),
+        summary,
+        playwrightLog: this.playwrightEngine.getLogs(),
+      });
+
+      this.emitProgress(runId, {
+        status: "completed",
+        progress: 100,
+        stage: "retry_done",
+      });
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      await EvaluationRun.findByIdAndUpdate(runId, {
+        status: "completed",
+        playwrightLog: this.playwrightEngine.getLogs(),
+      });
+      this.emitProgress(runId, {
+        status: "failed",
+        progress: 0,
+        stage: "retry_error",
+        error: errorMsg,
+      });
+    } finally {
+      await this.playwrightEngine.close();
+      this.abortControllers.delete(runId);
+      this.lastProgress.delete(runId);
+    }
+  }
 
   private async computeSummary(runId: string): Promise<IRunSummary> {
     const allResults = await EvaluationResult.find({

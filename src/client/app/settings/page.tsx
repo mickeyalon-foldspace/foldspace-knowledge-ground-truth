@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/components/AuthProvider";
@@ -103,6 +104,23 @@ export default function SettingsPage() {
             <p className="text-xs text-gray-500 mt-1">
               Your role: <span className="font-medium capitalize">{user?.role}</span>
             </p>
+          </div>
+
+          <div className="bg-white rounded-lg border p-5 mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-700">
+                Score Profiles
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Manage which criteria contribute to overall scores in the UI.
+              </p>
+            </div>
+            <Link
+              href="/settings/score-profiles"
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+            >
+              Manage &rarr;
+            </Link>
           </div>
 
           {!isAdmin && (

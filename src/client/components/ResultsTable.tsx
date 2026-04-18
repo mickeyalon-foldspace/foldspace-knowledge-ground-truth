@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment, useState } from "react";
-import type { EvaluationResultData } from "@/lib/api";
+import type { EvaluationResultData, ScoreCriterion } from "@/lib/api";
+import { ALL_SCORE_CRITERIA } from "@/lib/api";
 import { isRtlLanguage } from "@/lib/rtl";
 import { ScoreBadge } from "./ScoreChart";
 import ArticlesPanel from "./ArticlesPanel";
@@ -9,11 +10,43 @@ import ArticlesPanel from "./ArticlesPanel";
 interface ResultsTableProps {
   results: EvaluationResultData[];
   onDelete?: (id: string) => void;
+  enabledCriteria?: ScoreCriterion[];
 }
 
-export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
+const CRITERION_LABELS: Record<ScoreCriterion, string> = {
+  correctness: "Correct",
+  completeness: "Complete",
+  relevance: "Relevant",
+  faithfulness: "Faithful",
+};
+
+const CRITERION_FULL: Record<ScoreCriterion, string> = {
+  correctness: "Correctness",
+  completeness: "Completeness",
+  relevance: "Relevance",
+  faithfulness: "Faithfulness",
+};
+
+function computeDisplayOverall(
+  result: EvaluationResultData,
+  enabled: ScoreCriterion[]
+): number | null {
+  if (!result.judgeScores || enabled.length === 0) return null;
+  let sum = 0;
+  for (const c of enabled) {
+    sum += result.judgeScores[c].score;
+  }
+  return sum / enabled.length;
+}
+
+export default function ResultsTable({
+  results,
+  onDelete,
+  enabledCriteria,
+}: ResultsTableProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const enabled = enabledCriteria ?? ALL_SCORE_CRITERIA;
 
   if (results.length === 0) {
     return (
@@ -52,18 +85,26 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Lang
             </th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Correct
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Complete
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Relevant
-            </th>
-            <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Faithful
-            </th>
+            {enabled.includes("correctness") && (
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {CRITERION_LABELS.correctness}
+              </th>
+            )}
+            {enabled.includes("completeness") && (
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {CRITERION_LABELS.completeness}
+              </th>
+            )}
+            {enabled.includes("relevance") && (
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {CRITERION_LABELS.relevance}
+              </th>
+            )}
+            {enabled.includes("faithfulness") && (
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                {CRITERION_LABELS.faithfulness}
+              </th>
+            )}
             <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
               Overall
             </th>
@@ -80,10 +121,12 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
             const isExpanded = expandedRow === result._id;
             const isRtl = isRtlLanguage(result.language);
             const isDeleting = deletingId === result._id;
-            const colCount = onDelete ? 11 : 10;
+            const baseCols = 6 + enabled.length; // #, Question, Expected, Lang, Overall, Articles + criteria
+            const colCount = onDelete ? baseCols + 1 : baseCols;
             const uniqueArticles = new Set(
               (result.searchKnowledge?.chunks || []).map((c) => c.title)
             );
+            const displayOverall = computeDisplayOverall(result, enabled);
 
             return (
               <Fragment key={result._id}>
@@ -120,20 +163,32 @@ export default function ResultsTable({ results, onDelete }: ResultsTableProps) {
                       </span>
                     )}
                   </td>
+                  {enabled.includes("correctness") && (
+                    <td className="px-4 py-3 text-center">
+                      <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} label={CRITERION_FULL.correctness} />
+                    </td>
+                  )}
+                  {enabled.includes("completeness") && (
+                    <td className="px-4 py-3 text-center">
+                      <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} label={CRITERION_FULL.completeness} />
+                    </td>
+                  )}
+                  {enabled.includes("relevance") && (
+                    <td className="px-4 py-3 text-center">
+                      <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} label={CRITERION_FULL.relevance} />
+                    </td>
+                  )}
+                  {enabled.includes("faithfulness") && (
+                    <td className="px-4 py-3 text-center">
+                      <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} label={CRITERION_FULL.faithfulness} />
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.correctness.score ?? 0} label="Correctness" />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.completeness.score ?? 0} label="Completeness" />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.relevance.score ?? 0} label="Relevance" />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.faithfulness.score ?? 0} label="Faithfulness" />
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <ScoreBadge score={result.judgeScores?.overallScore ?? 0} label="Overall" />
+                    {displayOverall !== null ? (
+                      <ScoreBadge score={displayOverall} label="Overall (filtered)" />
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-center text-xs text-gray-500">
                     {uniqueArticles.size > 0 ? (

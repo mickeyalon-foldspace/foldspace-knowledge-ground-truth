@@ -16,11 +16,18 @@ import {
   Legend,
 } from "recharts";
 
+type ScoreCriterion =
+  | "correctness"
+  | "completeness"
+  | "relevance"
+  | "faithfulness";
+
 interface ScoreRadarProps {
   correctness: number;
   completeness: number;
   relevance: number;
   faithfulness: number;
+  enabledCriteria?: ScoreCriterion[];
 }
 
 export function ScoreRadar({
@@ -28,13 +35,26 @@ export function ScoreRadar({
   completeness,
   relevance,
   faithfulness,
+  enabledCriteria,
 }: ScoreRadarProps) {
-  const data = [
-    { criterion: "Correctness", score: correctness },
-    { criterion: "Completeness", score: completeness },
-    { criterion: "Relevance", score: relevance },
-    { criterion: "Faithfulness", score: faithfulness },
+  const allData: Array<{ criterion: string; key: ScoreCriterion; score: number }> = [
+    { criterion: "Correctness", key: "correctness", score: correctness },
+    { criterion: "Completeness", key: "completeness", score: completeness },
+    { criterion: "Relevance", key: "relevance", score: relevance },
+    { criterion: "Faithfulness", key: "faithfulness", score: faithfulness },
   ];
+
+  const data = enabledCriteria
+    ? allData.filter((d) => enabledCriteria.includes(d.key))
+    : allData;
+
+  if (data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[250px] text-sm text-gray-400">
+        No criteria selected
+      </div>
+    );
+  }
 
   return (
     <ResponsiveContainer width="100%" height={250}>

@@ -202,6 +202,72 @@ export async function bulkDeleteRuns(ids: string[]) {
   });
 }
 
+export async function assignScoreProfileToRun(
+  runId: string,
+  scoreProfileId: string | null
+) {
+  return request<EvaluationRunData>(`/runs/${runId}/score-profile`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scoreProfileId }),
+  });
+}
+
+export async function retryResults(runId: string, resultIds: string[]) {
+  return request<{ message: string; count: number }>(
+    `/runs/${runId}/retry-results`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resultIds }),
+    }
+  );
+}
+
+// Score Profiles
+export async function getScoreProfiles() {
+  return request<ScoreProfile[]>("/score-profiles");
+}
+
+export async function createScoreProfile(data: {
+  name: string;
+  enabledCriteria: ScoreCriterion[];
+  isDefault?: boolean;
+}) {
+  return request<ScoreProfile>("/score-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateScoreProfile(
+  id: string,
+  data: {
+    name?: string;
+    enabledCriteria?: ScoreCriterion[];
+    isDefault?: boolean;
+  }
+) {
+  return request<ScoreProfile>(`/score-profiles/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteScoreProfile(id: string) {
+  return request<{ message: string }>(`/score-profiles/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function setDefaultScoreProfile(id: string) {
+  return request<ScoreProfile>(`/score-profiles/${id}/set-default`, {
+    method: "POST",
+  });
+}
+
 // Results
 export async function getRunResults(runId: string, filters?: ResultFilters) {
   const params = new URLSearchParams();
@@ -375,12 +441,35 @@ export interface EvaluationRunData {
   status: "pending" | "running" | "completed" | "failed";
   progress: number;
   judgeModel: string;
+  scoreProfileId?: string;
   startedAt?: string;
   completedAt?: string;
   error?: string;
   playwrightLog?: string[];
   summary?: RunSummary;
   createdAt: string;
+}
+
+export type ScoreCriterion =
+  | "correctness"
+  | "completeness"
+  | "relevance"
+  | "faithfulness";
+
+export const ALL_SCORE_CRITERIA: ScoreCriterion[] = [
+  "correctness",
+  "completeness",
+  "relevance",
+  "faithfulness",
+];
+
+export interface ScoreProfile {
+  _id: string;
+  name: string;
+  enabledCriteria: ScoreCriterion[];
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface JudgeScoreDetail {

@@ -26,6 +26,7 @@ export interface IEvaluationRun extends Document {
   status: "pending" | "running" | "completed" | "failed";
   progress: number;
   judgeModel: string;
+  scoreProfileId?: Types.ObjectId;
   startedAt?: Date;
   completedAt?: Date;
   error?: string;
@@ -71,6 +72,11 @@ const evaluationRunSchema = new Schema<IEvaluationRun>(
     },
     progress: { type: Number, default: 0, min: 0, max: 100 },
     judgeModel: { type: String, required: true },
+    scoreProfileId: {
+      type: Schema.Types.ObjectId,
+      ref: "ScoreProfile",
+      required: false,
+    },
     startedAt: { type: Date },
     completedAt: { type: Date },
     error: { type: String },

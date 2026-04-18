@@ -10,6 +10,7 @@ import agentsRouter from "./routes/agents.js";
 import goldenSetsRouter from "./routes/goldenSets.js";
 import runsRouter from "./routes/runs.js";
 import resultsRouter from "./routes/results.js";
+import scoreProfilesRouter from "./routes/score-profiles.js";
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/runs", firebaseAuth, requireUser, runsRouter);
 app.use("/api/results", firebaseAuth, requireUser, resultsRouter);
 app.use("/api/users", firebaseAuth, requireUser, usersRouter);
 app.use("/api/invites", firebaseAuth, requireUser, invitesRouter);
+app.use("/api/score-profiles", firebaseAuth, requireUser, scoreProfilesRouter);
 
 async function start() {
   try {
